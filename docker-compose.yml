@@ -54,11 +54,13 @@ services:
     # acá. v0.0.0 = placeholder hasta la primera release real.
     image: ghcr.io/fer336/remitos-backend:v0.0.0
     restart: unless-stopped
+    # Lista simple, no el formato con `condition:` -- Portainer (y Swarm)
+    # rechaza esa forma extendida ("depends_on must be a list"). Como no
+    # ordena por healthcheck, el arranque en frío se cubre reintentando
+    # la migración en `entrypoint.sh` en vez de acá.
     depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
+      - postgres
+      - minio
     secrets:
       - remitos_env
     environment:
@@ -82,14 +84,14 @@ services:
 
   worker:
     <<: *backend-common
+    # Arranca detrás del backend para que las migraciones ya hayan corrido,
+    # pero sin garantía de orden real (ver comentario en `backend`). Si
+    # consulta antes de que la migración termine, falla y `restart:
+    # unless-stopped` lo reintenta hasta que el schema ya exista.
     depends_on:
-      # Arranca detrás del backend para que las migraciones ya hayan corrido.
-      backend:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
+      - backend
+      - postgres
+      - minio
     environment:
       RUN_MIGRATIONS: "0"
     ports: []
@@ -102,8 +104,7 @@ services:
     image: ghcr.io/fer336/remitos-frontend:v0.0.0
     restart: unless-stopped
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
     # nginx dentro de la imagen sirve el build y proxea /api -> backend:8000.
     # VITE_GOOGLE_CLIENT_ID/VITE_API_URL se hornean en build time (CI), no acá.
     ports:
