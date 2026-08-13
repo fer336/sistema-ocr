@@ -1,3 +1,4 @@
+import { RotateCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { StatusBadge } from "../components/StatusBadge";
@@ -83,6 +84,13 @@ interface StagedFile {
   startedAt: number | null;
   /** 0-100 estimado por tiempo transcurrido (ver `AVG_PROCESSING_MS`). */
   progress: number;
+  /**
+   * 0/90/180/270 -- solo tiene efecto en imágenes (`objectUrl` no nulo) y
+   * solo se puede tocar mientras la fila sigue en `staged`. Se aplica de
+   * verdad recién al procesar (ver `rotateImageFile`), acá solo maneja la
+   * vista previa.
+   */
+  rotation: 0 | 90 | 180 | 270;
 }
 
 function isAccepted(file: File): boolean {
@@ -106,7 +114,39 @@ function stageFile(file: File): StagedFile {
     message: null,
     startedAt: null,
     progress: 0,
+    rotation: 0,
   };
+}
+
+/**
+ * Rota de verdad los bytes del archivo (no solo la vista previa) antes de
+ * subirlo -- el OCR necesita la orientación correcta, no alcanza con girarlo
+ * en CSS. `createImageBitmap`/`canvas` son soporte estándar de navegador, sin
+ * dependencias nuevas.
+ */
+async function rotateImageFile(file: File, degrees: 90 | 180 | 270): Promise<File> {
+  const bitmap = await createImageBitmap(file);
+  const swapDimensions = degrees === 90 || degrees === 270;
+  const canvas = document.createElement("canvas");
+  canvas.width = swapDimensions ? bitmap.height : bitmap.width;
+  canvas.height = swapDimensions ? bitmap.width : bitmap.height;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    bitmap.close();
+    throw new Error("No se pudo rotar la imagen en este navegador.");
+  }
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate((degrees * Math.PI) / 180);
+  ctx.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2);
+  bitmap.close();
+
+  const mimeType = file.type || "image/jpeg";
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, mimeType, 0.92));
+  if (!blob) {
+    throw new Error("No se pudo rotar la imagen.");
+  }
+  return new File([blob], file.name, { type: mimeType });
 }
 
 function formatSize(bytes: number): string {
@@ -214,6 +254,7 @@ function restoreInFlightFiles(): StagedFile[] {
           message: null,
           startedAt: entry.startedAt,
           progress: estimateProgress(entry.startedAt),
+          rotation: 0,
         }
       : {
           key: entry.clientKey,
@@ -229,6 +270,7 @@ function restoreInFlightFiles(): StagedFile[] {
             "La subida se interrumpió antes de llegar al servidor (se cerró o recargó la pestaña). Volvé a seleccionar el archivo.",
           startedAt: entry.startedAt,
           progress: 0,
+          rotation: 0,
         }
   );
 }
@@ -352,6 +394,18 @@ export function Upload() {
     );
   }
 
+  /** Gira 90° en sentido horario, ciclando 0→90→180→270→0. Solo vista previa
+   * hasta que se procese (ver `rotateImageFile` en `processOne`). */
+  function rotateStaged(key: string) {
+    setFiles((current) =>
+      current.map((item) =>
+        item.key === key
+          ? { ...item, rotation: (((item.rotation + 90) % 360) as StagedFile["rotation"]) }
+          : item
+      )
+    );
+  }
+
   /**
    * `"cancelled"` (el componente se desmontó, ej. el usuario navegó a otra
    * pantalla) y `"timeout"` (se agotó `POLL_MAX_ATTEMPTS` con el backend
@@ -414,6 +468,12 @@ export function Upload() {
       throw new Error("El archivo original ya no está disponible; volvé a subirlo.");
     }
 
+    // La rotación elegida en la vista previa recién se hornea en los bytes
+    // acá -- es el único momento en que hace falta el archivo real rotado
+    // (para el OCR), no tiene sentido regenerarlo en cada re-render.
+    const fileToUpload =
+      staged.rotation === 0 ? staged.file : await rotateImageFile(staged.file, staged.rotation);
+
     const uploadStartedAt = Date.now();
     patchFile(staged.key, {
       stage: "uploading",
@@ -435,7 +495,7 @@ export function Upload() {
 
     let response;
     try {
-      response = await uploadFiles([staged.file]);
+      response = await uploadFiles([fileToUpload]);
     } catch (err) {
       untrackUpload(staged.key);
       throw err;
@@ -666,19 +726,33 @@ export function Upload() {
                 key={staged.key}
                 className="flex flex-col overflow-hidden rounded-lg border border-border bg-surface"
               >
-                <div className="flex h-32 items-center justify-center bg-surface-raised">
+                <div className="relative flex h-32 items-center justify-center overflow-hidden bg-surface-raised">
                   {/* Sin `file` la fila viene de `localStorage`: no hay binario
                       local para hacer miniatura ni para saber si era PDF. */}
                   {staged.objectUrl ? (
                     <img
                       src={staged.objectUrl}
                       alt={staged.filename}
-                      className="h-full w-full object-cover"
+                      className="h-full w-full object-contain transition-transform"
+                      style={{ transform: `rotate(${staged.rotation}deg)` }}
                     />
                   ) : (
                     <span className="text-sm font-medium text-ink-muted">
                       {staged.file ? "PDF" : "Archivo"}
                     </span>
+                  )}
+                  {/* Solo antes de procesar: rotar después no tendría efecto,
+                      el archivo real ya viajó al backend. */}
+                  {staged.objectUrl && staged.stage === "staged" && (
+                    <button
+                      type="button"
+                      onClick={() => rotateStaged(staged.key)}
+                      aria-label="Rotar imagen"
+                      title="Rotar 90°"
+                      className="absolute right-1.5 bottom-1.5 rounded-full bg-black/55 p-1.5 text-white transition hover:bg-black/70"
+                    >
+                      <RotateCw className="h-4 w-4" />
+                    </button>
                   )}
                 </div>
                 <div className="flex flex-1 flex-col gap-1 p-3">
