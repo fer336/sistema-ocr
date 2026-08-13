@@ -15,7 +15,7 @@ services:
     # entrypoint que carga las credenciales desde remitos_env (Anexo B) en
     # vez de recibirlas como variable de entorno plana. Tag pineado, igual
     # que backend/frontend -- lo actualiza release.yml.
-    image: ghcr.io/santini/remitos-postgres:v0.0.0
+    image: ghcr.io/fer336/remitos-postgres:v0.0.0
     restart: unless-stopped
     secrets:
       - remitos_env
@@ -33,7 +33,7 @@ services:
 
   minio:
     # Imagen propia (docker/minio/), mismo mecanismo que postgres.
-    image: ghcr.io/santini/remitos-minio:v0.0.0
+    image: ghcr.io/fer336/remitos-minio:v0.0.0
     restart: unless-stopped
     secrets:
       - remitos_env
@@ -52,7 +52,7 @@ services:
     # vX.Y.Z en cada release (INFRASTRUCTURE.md §6.8) -- no es una variable
     # de entorno: Portainer despliega exactamente lo que está commiteado
     # acá. v0.0.0 = placeholder hasta la primera release real.
-    image: ghcr.io/santini/remitos-backend:v0.0.0
+    image: ghcr.io/fer336/remitos-backend:v0.0.0
     restart: unless-stopped
     depends_on:
       postgres:
@@ -99,7 +99,7 @@ services:
 
   frontend:
     # Ídem backend: tag literal, reescrito por release.yml en cada release.
-    image: ghcr.io/santini/remitos-frontend:v0.0.0
+    image: ghcr.io/fer336/remitos-frontend:v0.0.0
     restart: unless-stopped
     depends_on:
       backend:

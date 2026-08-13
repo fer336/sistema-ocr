@@ -55,7 +55,7 @@ Antes de la primera release hay que cargar esto en
 
 | Tipo     | Nombre                   | Contenido                                                                    |
 | -------- | ------------------------ | ---------------------------------------------------------------------------- |
-| Secret   | `GHCR_TOKEN`             | PAT con `write:packages` para publicar en `ghcr.io/santini/remitos-*`.        |
+| Secret   | `GHCR_TOKEN`             | PAT clásico con `write:packages` (+ `repo` si el repo es privado) para publicar en `ghcr.io/fer336/remitos-*`. |
 | Secret   | `PORTAINER_WEBHOOK_URL`  | URL del webhook del stack en Portainer.                                       |
 | Variable | `PRODUCTION_HEALTH_URL`  | URL pública del healthcheck del backend, p.ej. `https://<dominio>/health`.     |
 | Variable | `VITE_GOOGLE_CLIENT_ID`  | Google OAuth *client id* (público: queda embebido en el bundle del frontend). |

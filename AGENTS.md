@@ -7,9 +7,9 @@ INFRASTRUCTURE.md · infra.project.yml · backend/env.example · frontend/.env.e
 
 ## Project shape
 
-- Repository: `santini/remitos`.
-- Images: `ghcr.io/santini/remitos-backend`, `ghcr.io/santini/remitos-frontend`,
-  `ghcr.io/santini/remitos-postgres`, `ghcr.io/santini/remitos-minio`.
+- Repository: `fer336/sistema-ocr`.
+- Images: `ghcr.io/fer336/remitos-backend`, `ghcr.io/fer336/remitos-frontend`,
+  `ghcr.io/fer336/remitos-postgres`, `ghcr.io/fer336/remitos-minio`.
 - Services: `postgres`, `minio`, `backend`, `worker`, `frontend`.
 - `worker` reuses the **same image** as `backend` (same `backend/Dockerfile`, only the
   `command:` differs). Never build or publish a separate worker image.

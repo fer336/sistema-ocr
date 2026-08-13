@@ -39,10 +39,10 @@ permissions:
   packages: write # push de imágenes a GHCR
 
 env:
-  BACKEND_IMAGE: ghcr.io/santini/remitos-backend
-  FRONTEND_IMAGE: ghcr.io/santini/remitos-frontend
-  POSTGRES_IMAGE: ghcr.io/santini/remitos-postgres
-  MINIO_IMAGE: ghcr.io/santini/remitos-minio
+  BACKEND_IMAGE: ghcr.io/fer336/remitos-backend
+  FRONTEND_IMAGE: ghcr.io/fer336/remitos-frontend
+  POSTGRES_IMAGE: ghcr.io/fer336/remitos-postgres
+  MINIO_IMAGE: ghcr.io/fer336/remitos-minio
 
 jobs:
   # ---------------------------------------------------------------- 1. SemVer
@@ -248,7 +248,7 @@ jobs:
           # Se usa Python y no `yq`: yq no viene instalado en el runner y, sobre
           # todo, reserializa el YAML completo (perdería comentarios y el anchor
           # `&backend-common` que comparten backend y worker). Un reemplazo
-          # textual sobre las referencias ghcr.io/santini/remitos-* toca sólo la
+          # textual sobre las referencias ghcr.io/fer336/remitos-* toca sólo la
           # línea del tag y es resistente a cambios de forma del compose.
           python3 - <<'PY'
           import os
@@ -260,12 +260,12 @@ jobs:
           path = pathlib.Path("docker-compose.yml")
           source = path.read_text()
 
-          image_pattern = re.compile(r"(ghcr\.io/santini/remitos-[A-Za-z0-9._-]+):[^\s\"'#]+")
+          image_pattern = re.compile(r"(ghcr\.io/fer336/remitos-[A-Za-z0-9._-]+):[^\s\"'#]+")
           updated, image_count = image_pattern.subn(lambda m: f"{m.group(1)}:{tag}", source)
 
           if image_count == 0:
               sys.exit(
-                  "No ghcr.io/santini/remitos-* image reference found in "
+                  "No ghcr.io/fer336/remitos-* image reference found in "
                   "docker-compose.yml; cannot pin the release (INFRASTRUCTURE.md §7)"
               )
 
@@ -288,7 +288,7 @@ jobs:
 
           # Verificación explícita: no debe quedar ninguna imagen del proyecto
           # ni ningún APP_VERSION apuntando a otro tag ni a `latest` (§5/§34).
-          if grep -nE 'ghcr\.io/santini/remitos-[A-Za-z0-9._-]+:' docker-compose.yml | grep -v ":${TAG}"; then
+          if grep -nE 'ghcr\.io/fer336/remitos-[A-Za-z0-9._-]+:' docker-compose.yml | grep -v ":${TAG}"; then
             echo "::error::docker-compose.yml still references project images with a tag other than ${TAG}"
             exit 1
           fi

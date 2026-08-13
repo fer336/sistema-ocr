@@ -3,7 +3,7 @@ standard:
   version: "2.1.0"
 
 project:
-  org: santini
+  org: fer336
   name: remitos
   snake: remitos
   track: app
@@ -11,7 +11,7 @@ project:
 
 registry:
   host: ghcr.io
-  image_base: ghcr.io/santini/remitos
+  image_base: ghcr.io/fer336/remitos
   immutable_tags: true
   platforms: [linux/amd64]
 
@@ -44,14 +44,14 @@ app:
   lockfile: package-lock.json
 
 services:
-  - { name: backend,  image: ghcr.io/santini/remitos-backend,  needs_secret: true, stateful: false }
-  - { name: worker,   image: ghcr.io/santini/remitos-backend,  needs_secret: true, stateful: false }
-  - { name: frontend, image: ghcr.io/santini/remitos-frontend, needs_secret: false, stateful: false }
+  - { name: backend,  image: ghcr.io/fer336/remitos-backend,  needs_secret: true, stateful: false }
+  - { name: worker,   image: ghcr.io/fer336/remitos-backend,  needs_secret: true, stateful: false }
+  - { name: frontend, image: ghcr.io/fer336/remitos-frontend, needs_secret: false, stateful: false }
   # postgres/minio: imagen propia (docker/postgres, docker/minio) que envuelve
   # la oficial con un entrypoint que carga remitos_env (Anexo B) -- por eso
   # needs_secret: true acá también, a diferencia de usar la imagen oficial
   # directa con variables de entorno planas.
-  - { name: postgres, image: ghcr.io/santini/remitos-postgres, needs_secret: true, stateful: true }
-  - { name: minio,    image: ghcr.io/santini/remitos-minio,    needs_secret: true, stateful: true }
+  - { name: postgres, image: ghcr.io/fer336/remitos-postgres, needs_secret: true, stateful: true }
+  - { name: minio,    image: ghcr.io/fer336/remitos-minio,    needs_secret: true, stateful: true }
 
 deviations: []
