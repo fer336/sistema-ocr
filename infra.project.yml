@@ -1,0 +1,57 @@
+standard:
+  name: infrastructure-deployment-standard
+  version: "2.1.0"
+
+project:
+  org: santini
+  name: remitos
+  snake: remitos
+  track: app
+  profile: A
+
+registry:
+  host: ghcr.io
+  image_base: ghcr.io/santini/remitos
+  immutable_tags: true
+  platforms: [linux/amd64]
+
+runtime:
+  manager: portainer
+  trigger: webhook
+
+config:
+  secret_name: remitos_env
+  secret_path: /run/secrets/remitos_env
+  dev_file: .env
+
+health:
+  # Completar con la URL pública real antes de la primera release; sin
+  # esto, validate-tag en release.yml falla (por diseño, INF-503).
+  url: ""
+  health_path: /health
+  version_path: /version
+  retries: 10
+  interval_seconds: 15
+
+migrations:
+  # Perfil A, réplica única de `backend`: corren en el arranque del
+  # contenedor, antes de servir tráfico (entrypoint.sh, RUN_MIGRATIONS=1).
+  # `worker` comparte imagen pero nunca migra (INF-321).
+  strategy: entrypoint
+
+app:
+  tests: required
+  lockfile: package-lock.json
+
+services:
+  - { name: backend,  image: ghcr.io/santini/remitos-backend,  needs_secret: true, stateful: false }
+  - { name: worker,   image: ghcr.io/santini/remitos-backend,  needs_secret: true, stateful: false }
+  - { name: frontend, image: ghcr.io/santini/remitos-frontend, needs_secret: false, stateful: false }
+  # postgres/minio: imagen propia (docker/postgres, docker/minio) que envuelve
+  # la oficial con un entrypoint que carga remitos_env (Anexo B) -- por eso
+  # needs_secret: true acá también, a diferencia de usar la imagen oficial
+  # directa con variables de entorno planas.
+  - { name: postgres, image: ghcr.io/santini/remitos-postgres, needs_secret: true, stateful: true }
+  - { name: minio,    image: ghcr.io/santini/remitos-minio,    needs_secret: true, stateful: true }
+
+deviations: []

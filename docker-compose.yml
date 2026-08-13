@@ -1,0 +1,114 @@
+name: remitos
+
+# Estándar de infraestructura Qeva (INFRASTRUCTURE.md §9/§19): un único
+# Docker Secret por proyecto, declarado externo -- ya existe en Portainer
+# antes del deploy, este compose solo lo referencia. `docker-compose.override.yml`
+# (auto-cargado por `docker compose` en desarrollo local) lo redefine como
+# secret respaldado por archivo, para poder levantar el stack sin Portainer.
+secrets:
+  remitos_env:
+    external: true
+
+services:
+  postgres:
+    # Imagen propia (docker/postgres/): mismo postgres:16.4-alpine, con un
+    # entrypoint que carga las credenciales desde remitos_env (Anexo B) en
+    # vez de recibirlas como variable de entorno plana. Tag pineado, igual
+    # que backend/frontend -- lo actualiza release.yml.
+    image: ghcr.io/santini/remitos-postgres:v0.0.0
+    restart: unless-stopped
+    secrets:
+      - remitos_env
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # Sin -U/-d a propósito: pg_isready no necesita autenticar para
+      # reportar "accepting connections", solo que el server responda al
+      # handshake -- y el healthcheck corre como proceso aparte, sin ver
+      # las variables que el wrapper cargó en runtime dentro de PID 1.
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    # Imagen propia (docker/minio/), mismo mecanismo que postgres.
+    image: ghcr.io/santini/remitos-minio:v0.0.0
+    restart: unless-stopped
+    secrets:
+      - remitos_env
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      # `mc ready local` es el healthcheck oficial de la imagen: consulta
+      # /minio/health/live sin depender de curl/wget, que la imagen no trae.
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend: &backend-common
+    # El pipeline de release (release.yml) reescribe este tag literal a
+    # vX.Y.Z en cada release (INFRASTRUCTURE.md §6.8) -- no es una variable
+    # de entorno: Portainer despliega exactamente lo que está commiteado
+    # acá. v0.0.0 = placeholder hasta la primera release real.
+    image: ghcr.io/santini/remitos-backend:v0.0.0
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    secrets:
+      - remitos_env
+    environment:
+      # Único operacional que no es config de la app: decide si este
+      # servicio corre `alembic upgrade head` al arrancar. El worker
+      # comparte imagen pero NUNCA migra (dos `alembic upgrade` a la vez
+      # se pisan).
+      RUN_MIGRATIONS: "1"
+      # INF-502: GET /version. No vive en remitos_env -- es metadata de
+      # deployment (qué release corre), no config de la app. release.yml
+      # la pinea junto a las imágenes en cada release (ver pin script).
+      APP_VERSION: v0.0.0
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  worker:
+    <<: *backend-common
+    depends_on:
+      # Arranca detrás del backend para que las migraciones ya hayan corrido.
+      backend:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      RUN_MIGRATIONS: "0"
+    ports: []
+    healthcheck:
+      disable: true
+    command: ["python", "-m", "app.worker.run"]
+
+  frontend:
+    # Ídem backend: tag literal, reescrito por release.yml en cada release.
+    image: ghcr.io/santini/remitos-frontend:v0.0.0
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    # nginx dentro de la imagen sirve el build y proxea /api -> backend:8000.
+    # VITE_GOOGLE_CLIENT_ID/VITE_API_URL se hornean en build time (CI), no acá.
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+
+volumes:
+  pgdata:
+  miniodata:

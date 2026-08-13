@@ -29,3 +29,6 @@ build/
 
 # Testing artifacts
 .playwright-mcp/
+
+# Tool caches
+.atl/

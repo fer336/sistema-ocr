@@ -1,0 +1,92 @@
+# CI — INFRASTRUCTURE.md §3, §23.
+#
+# Se ejecuta en cada push y en cada pull request, sobre cualquier rama.
+# Este workflow NUNCA toca producción: producción es release-driven y sólo se
+# despliega desde un tag SemVer (ver .github/workflows/release.yml).
+name: CI
+
+on:
+  push:
+    # Cualquier rama. El filtro `branches` excluye por definición los pushes de
+    # tags, así que un `vX.Y.Z` dispara sólo release.yml.
+    branches:
+      - '**'
+  pull_request:
+
+# Un push a una rama con PR abierto dispara CI dos veces (push + pull_request);
+# la concurrencia por ref cancela la ejecución anterior para no duplicar minutos.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # backend y frontend no dependen entre sí: corren en paralelo.
+  backend:
+    name: Backend (Python 3.12)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          # Mismo runtime que backend/Dockerfile (python:3.12-slim).
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # pytest no está en requirements.txt (es una dependencia de runtime
+          # de producción, no de test). Cuando el proyecto tenga un
+          # requirements-dev.txt, reemplazar esta línea por su instalación.
+          pip install pytest
+
+      # No hay configuración de ruff en el repo (ni ruff.toml ni pyproject.toml
+      # con [tool.ruff]), así que no se ejecuta lint de Python: no se inventa
+      # configuración. Al agregar ruff.toml, añadir aquí un paso `ruff check .`.
+
+      - name: Run tests
+        # `backend/tests/` todavía no tiene tests reales. pytest devuelve exit
+        # code 5 cuando no recolecta ningún test; ese caso concreto se trata
+        # como éxito para que el pipeline siga siendo útil mientras la suite no
+        # existe. Cualquier otro exit code distinto de 0 (fallos, errores de
+        # colección, crash) sigue rompiendo el job, y los tests se ejecutarán
+        # automáticamente en cuanto se agreguen.
+        run: pytest --no-header -ra || [ $? -eq 5 ]
+
+  frontend:
+    name: Frontend (Node 22)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # frontend/package.json no declara `engines` y no hay .nvmrc: se usa
+          # la misma major que frontend/Dockerfile (node:22-alpine) para que CI
+          # compile con el mismo runtime que la imagen de producción.
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build

@@ -1,0 +1,35 @@
+# Se carga automáticamente en `docker compose up` (sin -f) junto a
+# docker-compose.yml -- SOLO para desarrollo local. Nunca se usa en
+# producción (Portainer despliega docker-compose.yml a secas).
+#
+# INF-221: la misma imagen (el wrapper propio de Postgres/MinIO) funciona
+# en local y en producción -- lo único que cambia es de dónde sale
+# remitos_env: acá, de backend/.env (el mismo que ya usás para correr el
+# backend en venv) en vez de un Docker Secret real (que necesita Swarm).
+# Reusa un archivo que ya existe -- no hace falta un tercer .env en la
+# raíz solo para esto. backend/.env.example trae las claves
+# POSTGRES_*/MINIO_ROOT_* que este wrapper necesita, además de las que ya
+# usa el backend.
+#
+# El loop de desarrollo del día a día es: Postgres/MinIO acá, backend
+# nativo en venv, frontend con `npm run dev` (ver README.md) -- por eso
+# backend/worker/frontend no se tocan en este archivo.
+
+secrets:
+  remitos_env:
+    external: false
+    file: backend/.env
+
+services:
+  postgres:
+    build:
+      context: ./docker/postgres
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+  minio:
+    build:
+      context: ./docker/minio
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"

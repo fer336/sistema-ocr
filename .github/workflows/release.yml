@@ -1,0 +1,390 @@
+# Release — INFRASTRUCTURE.md §3, §4, §5, §6, §7, §22, §27, §40, §43.
+#
+# Pipeline obligatorio (§6), en orden:
+#   1. Validar el formato SemVer.
+#   2. Ejecutar tests.
+#   3. Ejecutar build.
+#   4. Crear imagen Docker.
+#   5. Asignar a la imagen el tag exacto de la release.
+#   6. Publicar la imagen en el registry.
+#   7. Actualizar docker-compose.yml.
+#   8. Pinear la imagen al nuevo tag.
+#   9. Hacer commit del compose.
+#  10. Hacer push del compose actualizado.
+#  11. Ejecutar el webhook de Portainer.
+#  12. Esperar el despliegue.
+#  13. Ejecutar healthcheck.
+#  14. Marcar el deployment como exitoso únicamente si producción está saludable.
+#
+# §7: si falla cualquiera de esas etapas, el workflow debe quedar en rojo.
+# Aquí eso se garantiza con `needs:` entre jobs (un job fallido bloquea los
+# siguientes y marca la run como failed) y con pasos que salen con exit != 0.
+name: Release
+
+on:
+  push:
+    tags:
+      # Sólo vMAJOR.MINOR.PATCH (§4). El filtro de GitHub Actions usa globs, no
+      # regex: `[0-9]+` aquí significa "uno o más de los caracteres 0-9 y +",
+      # por eso el job validate-tag revalida con una regex estricta.
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+# Nunca dos releases pisándose el push del compose ni el webhook de Portainer.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write # commit + push del compose pineado (§9/§10 de la lista §6)
+  packages: write # push de imágenes a GHCR
+
+env:
+  BACKEND_IMAGE: ghcr.io/santini/remitos-backend
+  FRONTEND_IMAGE: ghcr.io/santini/remitos-frontend
+  POSTGRES_IMAGE: ghcr.io/santini/remitos-postgres
+  MINIO_IMAGE: ghcr.io/santini/remitos-minio
+
+jobs:
+  # ---------------------------------------------------------------- 1. SemVer
+  validate-tag:
+    name: 1. Validate SemVer tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate tag format
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # §4: sólo vMAJOR.MINOR.PATCH. `v1.2`, `v1.2.3-rc1`, `1.2.3` o
+          # `v1.2.3.4` son inválidos y detienen el pipeline antes de construir
+          # o publicar nada.
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag '$TAG' is not a valid SemVer release tag (expected vMAJOR.MINOR.PATCH, e.g. v1.4.2)"
+            exit 1
+          fi
+          echo "Release tag: $TAG"
+
+      - name: Verify required secrets and variables
+        # Se valida acá, antes de construir o publicar imágenes, para no dejar
+        # una release a medias (imágenes publicadas sin deployment posible).
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          PORTAINER_WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_URL }}
+          PRODUCTION_HEALTH_URL: ${{ vars.PRODUCTION_HEALTH_URL }}
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+        run: |
+          set -euo pipefail
+          missing=0
+          # §22: GitHub sólo guarda lo necesario para CI/CD. La configuración de
+          # runtime vive en el Docker Secret `remitos_env` de Portainer.
+          for name in GHCR_TOKEN PORTAINER_WEBHOOK_URL PRODUCTION_HEALTH_URL VITE_GOOGLE_CLIENT_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing required GitHub secret/variable: $name (see README.md → Deployment)"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+  # ------------------------------------------------------------------ 2. Tests
+  backend-tests:
+    name: 2. Backend tests
+    needs: validate-tag
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run tests
+        # Mismo guard que en ci.yml: exit code 5 de pytest = "no tests
+        # collected" y se acepta mientras backend/tests/ esté vacío; cualquier
+        # otro fallo rompe la release (§7: "tests").
+        run: pytest --no-header -ra || [ $? -eq 5 ]
+
+  # ------------------------------------------------------------------ 3. Build
+  frontend-build:
+    name: 3. Frontend build
+    needs: validate-tag
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # Misma major que frontend/Dockerfile (node:22-alpine).
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+  # -------------------------------------------- 4..14. Imágenes y deployment
+  release:
+    name: 4. Build, push, pin, deploy
+    needs: [backend-tests, frontend-build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          # fetch-depth 0: más adelante hay que traer y commitear sobre la rama
+          # por defecto, no sobre el HEAD desacoplado del tag.
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # §22: token de CI/CD con scope de registry, guardado en GitHub Secrets.
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      # 4/5/6 — backend. §5: tag exacto de la release y NUNCA `latest`.
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          # El servicio `worker` reutiliza esta misma imagen con otro `command`
+          # en el compose: no se construye ninguna imagen de worker aparte.
+          tags: ${{ env.BACKEND_IMAGE }}:${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 4/5/6 — frontend.
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: ${{ env.FRONTEND_IMAGE }}:${{ github.ref_name }}
+          build-args: |
+            VITE_GOOGLE_CLIENT_ID=${{ vars.VITE_GOOGLE_CLIENT_ID }}
+            VITE_API_URL=/api/v1
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+        # VITE_* queda embebido en el bundle público, así que no puede ser un
+        # secreto (§24/§34). El client id de Google OAuth es público por diseño
+        # (client id != client secret), por eso va como *repository variable*
+        # `vars.VITE_GOOGLE_CLIENT_ID` y no como secret; validate-tag ya
+        # verificó que no esté vacío para no hornear un placeholder roto.
+        # VITE_API_URL es fijo: nginx (frontend/nginx.conf) proxea /api hacia
+        # backend:8000 dentro de la red de compose conservando el prefijo.
+
+      # 4/5/6 — postgres/minio envueltos (docker/postgres, docker/minio):
+      # mismo Postgres/MinIO oficial, con un entrypoint que carga sus
+      # credenciales desde remitos_env en vez de recibirlas como variable
+      # de entorno plana (cierra INF-211 vía el adaptador shell/entrypoint
+      # del Anexo B). Se versionan con el mismo tag que el resto de la
+      # release aunque el Postgres/MinIO de base no haya cambiado -- Perfil
+      # A no tiene "release parcial", todo el stack se pinea junto.
+      - name: Build and push postgres image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./docker/postgres
+          file: ./docker/postgres/Dockerfile
+          push: true
+          tags: ${{ env.POSTGRES_IMAGE }}:${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push minio image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./docker/minio
+          file: ./docker/minio/Dockerfile
+          push: true
+          tags: ${{ env.MINIO_IMAGE }}:${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 7/8 — actualizar y pinear el compose sobre la rama por defecto.
+      - name: Switch to default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          # El checkout de un tag deja HEAD desacoplado; el commit del compose
+          # tiene que quedar en la rama por defecto para que Portainer lo lea
+          # desde GitHub (§27).
+          git fetch origin "$DEFAULT_BRANCH"
+          git checkout -B "$DEFAULT_BRANCH" "origin/$DEFAULT_BRANCH"
+
+      - name: Pin compose images to release tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Se usa Python y no `yq`: yq no viene instalado en el runner y, sobre
+          # todo, reserializa el YAML completo (perdería comentarios y el anchor
+          # `&backend-common` que comparten backend y worker). Un reemplazo
+          # textual sobre las referencias ghcr.io/santini/remitos-* toca sólo la
+          # línea del tag y es resistente a cambios de forma del compose.
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+          import sys
+
+          tag = os.environ["TAG"]
+          path = pathlib.Path("docker-compose.yml")
+          source = path.read_text()
+
+          image_pattern = re.compile(r"(ghcr\.io/santini/remitos-[A-Za-z0-9._-]+):[^\s\"'#]+")
+          updated, image_count = image_pattern.subn(lambda m: f"{m.group(1)}:{tag}", source)
+
+          if image_count == 0:
+              sys.exit(
+                  "No ghcr.io/santini/remitos-* image reference found in "
+                  "docker-compose.yml; cannot pin the release (INFRASTRUCTURE.md §7)"
+              )
+
+          # INF-502/503: GET /version debe reflejar el tag desplegado. Se
+          # inyecta como env var (no vive en remitos_env: es metadata de
+          # deployment, no config de la app) y se pinea acá junto a las
+          # imágenes, en el mismo commit.
+          version_pattern = re.compile(r"(APP_VERSION:\s*)v[0-9]+\.[0-9]+\.[0-9]+")
+          updated, version_count = version_pattern.subn(lambda m: f"{m.group(1)}{tag}", updated)
+
+          if version_count == 0:
+              sys.exit(
+                  "No APP_VERSION: vX.Y.Z line found in docker-compose.yml; "
+                  "cannot satisfy INF-502 (GET /version)"
+              )
+
+          path.write_text(updated)
+          print(f"Pinned {image_count} image reference(s) and {version_count} APP_VERSION line(s) to {tag}")
+          PY
+
+          # Verificación explícita: no debe quedar ninguna imagen del proyecto
+          # ni ningún APP_VERSION apuntando a otro tag ni a `latest` (§5/§34).
+          if grep -nE 'ghcr\.io/santini/remitos-[A-Za-z0-9._-]+:' docker-compose.yml | grep -v ":${TAG}"; then
+            echo "::error::docker-compose.yml still references project images with a tag other than ${TAG}"
+            exit 1
+          fi
+          if grep -nE 'APP_VERSION:' docker-compose.yml | grep -v ": *${TAG}"; then
+            echo "::error::docker-compose.yml APP_VERSION does not match ${TAG}"
+            exit 1
+          fi
+          grep -nE 'ghcr\.io/santini/remitos|APP_VERSION:' docker-compose.yml
+
+      # 9/10 — commit y push del compose (§40, §43).
+      - name: Commit and push pinned compose
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          # §40: los commits automáticos del pipeline pertenecen al bot, nunca
+          # al desarrollador. Sin trailers de coautoría de IA: este commit lo
+          # genera el pipeline, no un agente.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Sólo el compose: ningún otro archivo entra en este commit.
+          git add docker-compose.yml
+
+          git diff --cached --quiet || \
+            git commit -m "chore(release): pin images to ${GITHUB_REF_NAME}"
+
+          git push origin "HEAD:${DEFAULT_BRANCH}"
+
+      # 11 — webhook, estrictamente después del push del compose (§27).
+      - name: Trigger Portainer webhook
+        env:
+          PORTAINER_WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          # -f hace que curl salga con error ante cualquier respuesta HTTP >= 400,
+          # así un webhook rechazado rompe la release (§7: "webhook").
+          curl -fsS -X POST "$PORTAINER_WEBHOOK_URL"
+          echo "Portainer webhook triggered for ${GITHUB_REF_NAME}"
+
+      # 12/13/14 — esperar el despliegue y validar producción: salud Y
+      # versión (INF-503). Un 200 de /health con la versión anterior
+      # significa que Portainer no aplicó el release -- no es un éxito.
+      - name: Wait for deployment and verify production health + version
+        env:
+          # Repository variable: URL pública de /health del backend
+          # desplegado, p.ej. https://remitos.example.com/health. Debe
+          # cargarse en Settings → Secrets and variables → Actions →
+          # Variables antes de la primera release; sin ella el pipeline
+          # falla en validate-tag. /version se deriva reemplazando el
+          # sufijo /health por /version (infra.project.yml: health_path /
+          # version_path comparten el mismo host).
+          HEALTH_URL: ${{ vars.PRODUCTION_HEALTH_URL }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -uo pipefail
+
+          case "$HEALTH_URL" in
+            */health) VERSION_URL="${HEALTH_URL%/health}/version" ;;
+            *)
+              echo "::error::PRODUCTION_HEALTH_URL ('$HEALTH_URL') no termina en /health; no se puede derivar /version"
+              exit 1
+              ;;
+          esac
+
+          # Portainer tarda en recrear los contenedores (pull de la imagen nueva,
+          # migraciones de Alembic en el arranque del backend). En vez de un
+          # sleep largo y fijo, se espera 20s y luego se reintenta: 10 intentos
+          # con 15s de backoff ≈ 2min 50s de presupuesto total. Es suficiente
+          # para un stack chico y lo bastante corto como para no enmascarar un
+          # deployment que quedó caído; subir los reintentos si el stack crece.
+          sleep 20
+
+          attempts=10
+          for i in $(seq 1 "$attempts"); do
+            health_code=$(curl -sS -o /tmp/health.json -w '%{http_code}' --max-time 10 "$HEALTH_URL" || echo "000")
+            version_code=$(curl -sS -o /tmp/version.json -w '%{http_code}' --max-time 10 "$VERSION_URL" || echo "000")
+
+            if [ "$health_code" = "200" ] \
+              && grep -qE '"status"[[:space:]]*:[[:space:]]*"ok"' /tmp/health.json \
+              && [ "$version_code" = "200" ] \
+              && grep -qE "\"version\"[[:space:]]*:[[:space:]]*\"${TAG}\"" /tmp/version.json; then
+              echo "Production healthy and on ${TAG} after attempt $i:"
+              echo "  health:  $(cat /tmp/health.json)"
+              echo "  version: $(cat /tmp/version.json)"
+              exit 0
+            fi
+
+            echo "Attempt $i/$attempts:"
+            echo "  health  HTTP $health_code  $(cat /tmp/health.json 2>/dev/null || true)"
+            echo "  version HTTP $version_code  $(cat /tmp/version.json 2>/dev/null || true) (esperado: ${TAG})"
+            sleep 15
+          done
+
+          # INF-312/503: nunca marcar el deployment como exitoso si producción
+          # no respondió sana Y con la versión de esta release. El job termina
+          # en rojo y la run también.
+          echo "::error::Production health/version check failed for ${TAG} at ${HEALTH_URL} / ${VERSION_URL} after ${attempts} attempts"
+          exit 1
