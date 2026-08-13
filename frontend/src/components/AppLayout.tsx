@@ -38,7 +38,10 @@ export function AppLayout() {
           la barra inferior fija (ver más abajo) y en el header compacto. */}
       <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 flex-col border-r border-border bg-surface sm:flex">
         <div className="px-5 py-5">
-          <h1 className="text-lg font-semibold text-ink">Remitos</h1>
+          <div className="flex items-center gap-2">
+            <img src="/favicon.svg" alt="" className="h-6 w-6 shrink-0" />
+            <h1 className="text-lg font-semibold text-ink">OCR</h1>
+          </div>
           <p className="text-xs text-ink-muted">Digitalización, OCR y revisión</p>
         </div>
 
@@ -104,7 +107,10 @@ export function AppLayout() {
       <header className="border-b border-border bg-surface sm:hidden">
         <div className="flex items-center justify-between gap-3 px-4 py-3">
           <div>
-            <h1 className="text-lg font-semibold text-ink">Remitos</h1>
+            <div className="flex items-center gap-2">
+              <img src="/favicon.svg" alt="" className="h-6 w-6 shrink-0" />
+              <h1 className="text-lg font-semibold text-ink">OCR</h1>
+            </div>
             <p className="text-xs text-ink-muted">Digitalización, OCR y revisión</p>
           </div>
           <div className="flex items-center gap-2">
