@@ -24,8 +24,8 @@ export function SearchBar({ value, onChange }: SearchBarProps) {
         type="search"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="Buscar por cliente, número, artículo o marca..."
-        className="w-full rounded-lg border border-slate-300 bg-surface py-2.5 pl-9 pr-4 text-sm text-ink placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary"
+        placeholder="Buscar por cliente, n.º cliente, n.º remito, fecha o comentarios..."
+        className="w-full rounded-lg border border-border bg-surface py-2.5 pl-9 pr-4 text-sm text-ink placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary"
       />
     </div>
   );

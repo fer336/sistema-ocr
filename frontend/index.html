@@ -14,6 +14,21 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Aplica el tema elegido ANTES del primer paint, si no hay uno guardado
+      // sigue el sistema operativo (el CSS ya cubre ese caso solo). Evita el
+      // flash de tema incorrecto que se vería si esto se hiciera en React.
+      (function () {
+        try {
+          var stored = localStorage.getItem("sanitini.theme");
+          if (stored === "light" || stored === "dark") {
+            document.documentElement.setAttribute("data-theme", stored);
+          }
+        } catch {
+          // localStorage deshabilitado: se sigue con el tema del sistema.
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -1,0 +1,17 @@
+node_modules
+dist
+dist-ssr
+.git
+.gitignore
+*.log
+.DS_Store
+Dockerfile
+.dockerignore
+README.md
+
+# Los VITE_* de build llegan por --build-arg (ver Dockerfile / docker-compose.yml).
+# Un .env local NO debe entrar al contexto de build: `process.env` gana sobre el
+# archivo, así que dejarlo pasar solo genera builds distintos segun la maquina.
+.env
+.env.*
+!.env.example

@@ -1,30 +1,44 @@
+import {
+  AlertTriangle,
+  CheckCircle2,
+  CircleDashed,
+  Clock,
+  CopyCheck,
+  Loader2,
+  Upload,
+  type LucideIcon,
+} from "lucide-react";
 import { cn } from "../lib/cn";
-import { REMITO_STATUS } from "../types";
-
-const STATUS_STYLES: Record<string, string> = {
-  [REMITO_STATUS.PROCESSED]: "bg-green-100 text-green-700",
-  [REMITO_STATUS.REQUIRES_REVIEW]: "bg-amber-100 text-amber-700",
-  [REMITO_STATUS.DUPLICATE]: "bg-rose-100 text-rose-600",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  [REMITO_STATUS.PROCESSED]: "Procesado",
-  [REMITO_STATUS.REQUIRES_REVIEW]: "Requiere revisión",
-  [REMITO_STATUS.DUPLICATE]: "Posible duplicado",
-};
+import { STATUS_LABELS, STATUS_STYLES } from "../lib/status";
+import { SOURCE_FILE_STATUS } from "../types";
 
 interface StatusBadgeProps {
   status: string;
+  className?: string;
 }
 
-export function StatusBadge({ status }: StatusBadgeProps) {
+const STATUS_ICONS: Record<string, LucideIcon> = {
+  [SOURCE_FILE_STATUS.UPLOADED]: Upload,
+  [SOURCE_FILE_STATUS.PENDING]: Clock,
+  [SOURCE_FILE_STATUS.PROCESSING]: Loader2,
+  [SOURCE_FILE_STATUS.PROCESSED]: CheckCircle2,
+  [SOURCE_FILE_STATUS.REQUIRES_REVIEW]: AlertTriangle,
+  [SOURCE_FILE_STATUS.PARTIAL]: AlertTriangle,
+  [SOURCE_FILE_STATUS.ERROR]: AlertTriangle,
+  [SOURCE_FILE_STATUS.DUPLICATE]: CopyCheck,
+};
+
+export function StatusBadge({ status, className }: StatusBadgeProps) {
+  const Icon = STATUS_ICONS[status] ?? CircleDashed;
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold",
-        STATUS_STYLES[status] ?? "bg-slate-200/80 text-slate-800"
+        "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap",
+        STATUS_STYLES[status] ?? "bg-surface-raised text-ink-muted",
+        className
       )}
     >
+      <Icon className={cn("h-3 w-3", status === SOURCE_FILE_STATUS.PROCESSING && "animate-spin")} />
       {STATUS_LABELS[status] ?? status}
     </span>
   );
