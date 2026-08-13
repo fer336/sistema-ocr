@@ -1,5 +1,3 @@
-name: remitos
-
 # Estándar de infraestructura Qeva (INFRASTRUCTURE.md §9/§19): un único
 # Docker Secret por proyecto, declarado externo -- ya existe en Portainer
 # antes del deploy, este compose solo lo referencia. `docker-compose.override.yml`
