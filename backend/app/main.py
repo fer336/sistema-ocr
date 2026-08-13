@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1 import files
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.services import minio_service
@@ -44,9 +43,6 @@ app.add_middleware(
 )
 
 app.include_router(api_router)
-# Fuera de /api/v1 a propósito: es lo que mantiene el link corto de
-# compartir corto (`{public_base_url}/s/{code}`, sin sesión).
-app.include_router(files.public_router)
 
 
 @app.get("/health")

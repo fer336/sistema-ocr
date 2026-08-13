@@ -134,11 +134,28 @@ def remove_object(key: str) -> None:
         raise StorageError(f"No se pudo borrar {key}: {exc}") from exc
 
 
-def presigned_get_url(key: str, expires_seconds: int | None = None) -> str:
-    """URL temporal de descarga. El bucket permanece privado (PRD §22)."""
+def presigned_get_url(
+    key: str,
+    expires_seconds: int | None = None,
+    download_filename: str | None = None,
+) -> str:
+    """URL temporal de descarga. El bucket permanece privado (PRD §22).
+
+    `download_filename` fuerza `Content-Disposition: attachment` (vía
+    `response-content-disposition`, parte de la firma) en vez de dejar que el
+    navegador decida mostrarla inline -- lo usa el botón "Descargar", no el
+    de "Ver" (que sí quiere abrir el archivo en el visor, no bajarlo).
+    """
     client = get_client()
     expires = timedelta(seconds=expires_seconds or settings.minio_presigned_expires_seconds)
+    response_headers = (
+        {"response-content-disposition": f'attachment; filename="{download_filename}"'}
+        if download_filename
+        else None
+    )
     try:
-        return client.presigned_get_object(settings.minio_bucket, key, expires=expires)
+        return client.presigned_get_object(
+            settings.minio_bucket, key, expires=expires, response_headers=response_headers
+        )
     except Exception as exc:  # noqa: BLE001 - ver docstring de StorageError
         raise StorageError(f"No se pudo firmar {key}: {exc}") from exc

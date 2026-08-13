@@ -8,6 +8,7 @@ import { ShareModal } from "../components/ShareModal";
 import { cn } from "../lib/cn";
 import { deleteRemito, listRemitos } from "../lib/api";
 import { dateInputToDdMmYyyy } from "../lib/datetime";
+import { getDownloadUrl } from "../lib/files";
 import { REMITO_STATUS, type DeliveryNote } from "../types";
 
 const PAGE_SIZE = 10;
@@ -35,6 +36,7 @@ export function RemitosList() {
   const [previewRemito, setPreviewRemito] = useState<DeliveryNote | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [sharing, setSharing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -188,6 +190,41 @@ export function RemitosList() {
     }
   }
 
+  /**
+   * Descarga cada archivo por separado (no hay adjuntado directo a WhatsApp,
+   * esto es para el que prefiere mandarlos a mano). Con un `<a download>` por
+   * remito y una pausa entre cada uno -- disparar varias descargas juntas
+   * hace que el navegador bloquee todas menos la primera.
+   */
+  async function handleBulkDownload() {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+
+    setDownloading(true);
+    setError(null);
+    let failedCount = 0;
+
+    for (const [index, id] of ids.entries()) {
+      try {
+        const url = await getDownloadUrl(id);
+        const link = document.createElement("a");
+        link.href = url;
+        link.rel = "noopener";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      } catch {
+        failedCount += 1;
+      }
+      if (index < ids.length - 1) await new Promise((resolve) => setTimeout(resolve, 400));
+    }
+
+    setDownloading(false);
+    if (failedCount > 0) {
+      setError(`No se pudieron descargar ${failedCount} de ${ids.length} remitos seleccionados.`);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="space-y-3">
@@ -242,6 +279,14 @@ export function RemitosList() {
               className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary-hover"
             >
               Compartir por WhatsApp
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleBulkDownload()}
+              disabled={downloading}
+              className="rounded-lg border border-border bg-surface px-4 py-2 text-sm font-medium text-ink transition hover:bg-surface-raised disabled:opacity-50"
+            >
+              {downloading ? "Descargando..." : "Descargar"}
             </button>
             <button
               type="button"

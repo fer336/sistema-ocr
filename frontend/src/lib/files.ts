@@ -55,6 +55,22 @@ export function prefetchFileUrl(remitoId: string): void {
   void getFileUrl(remitoId).catch(() => undefined);
 }
 
+/**
+ * URL prefirmada con `Content-Disposition: attachment` (nombre = número de
+ * remito). No pasa por el cache de `getFileUrl`: es de un solo uso, cada
+ * descarga pide la suya.
+ */
+export function getDownloadUrl(remitoId: string): Promise<string> {
+  return apiRequest<FileUrlResponse>(`/remitos/${remitoId}/file-url?download=true`).then(
+    (payload) => {
+      if (!payload?.url) {
+        throw new Error("El backend no devolvió una URL de archivo.");
+      }
+      return payload.url;
+    }
+  );
+}
+
 /** Heurística para decidir entre `<img>` e `<iframe>` en el preview. */
 export function looksLikePdf(url: string, filename?: string | null): boolean {
   if (filename?.toLowerCase().endsWith(".pdf")) return true;
