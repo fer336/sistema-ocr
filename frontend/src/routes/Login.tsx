@@ -44,7 +44,7 @@ export function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-canvas px-4">
       <div className="w-full max-w-sm rounded-lg border border-border bg-surface p-8 text-center shadow-sm">
-        <h1 className="text-xl font-semibold text-ink">Remitos</h1>
+        <h1 className="text-xl font-semibold text-ink">Casa Santini</h1>
         <p className="mt-1 text-sm text-ink-muted">
           Ingresá con tu cuenta de Google para continuar.
         </p>
