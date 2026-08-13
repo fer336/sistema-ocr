@@ -18,9 +18,6 @@ secrets:
 networks:
   network_public:
     external: true
-  remitos-internal:
-    driver: overlay
-    internal: true
 
 services:
   backend:
@@ -31,7 +28,6 @@ services:
     image: ghcr.io/fer336/remitos-backend:v0.0.0
     networks:
       - network_public
-      - remitos-internal
     secrets:
       - remitos_env
     environment:
@@ -90,7 +86,6 @@ services:
     image: ghcr.io/fer336/remitos-frontend:v0.0.0
     networks:
       - network_public
-      - remitos-internal
     depends_on:
       - backend
     # nginx dentro de la imagen sirve el build; el proxy /api -> backend:8000
