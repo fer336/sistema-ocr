@@ -132,7 +132,9 @@ export function AppLayout() {
       </header>
 
       <main className="sm:pl-64">
-        <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6">
+        {/* Sin `max-w`: el contenido ocupa todo el ancho disponible, el
+            padding es solo para no pegar el texto contra el borde. */}
+        <div className="space-y-6 px-4 py-6 sm:px-6">
           <Outlet />
         </div>
       </main>
