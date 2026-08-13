@@ -134,8 +134,8 @@ export function RemitosTable({
               {COLUMNS_BEFORE_COMENTARIOS.map(sortableHeader)}
               <th className="px-4 py-2 text-left font-medium text-ink-muted">Comentarios</th>
               {COLUMNS_AFTER_COMENTARIOS.map(sortableHeader)}
-              <th className="px-4 py-2 text-left font-medium text-ink-muted">Archivo</th>
-              <th className="px-4 py-2 text-left font-medium text-ink-muted">
+              <th className="w-16 px-4 py-2 text-center font-medium text-ink-muted">Archivo</th>
+              <th className="w-16 px-4 py-2 text-center font-medium text-ink-muted">
                 <span className="sr-only">Borrar</span>
               </th>
             </tr>
@@ -173,7 +173,7 @@ export function RemitosTable({
                 <td className="px-4 py-2">
                   <StatusBadge status={remito.status} />
                 </td>
-                <td className="px-4 py-2">
+                <td className="px-4 py-2 text-center">
                   <button
                     type="button"
                     onClick={(event) => {
@@ -185,10 +185,10 @@ export function RemitosTable({
                     aria-label={`Ver remito ${remito.numero_remito ?? "sin número"}`}
                     className="text-primary transition hover:text-primary-hover"
                   >
-                    <Eye className="h-4 w-4" />
+                    <Eye className="mx-auto h-4 w-4" />
                   </button>
                 </td>
-                <td className="px-4 py-2">
+                <td className="px-4 py-2 text-center">
                   <button
                     type="button"
                     onClick={(event) => {
@@ -198,7 +198,7 @@ export function RemitosTable({
                     aria-label={`Borrar remito ${remito.numero_remito ?? "sin número"}`}
                     className="text-error transition hover:text-error/70"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="mx-auto h-4 w-4" />
                   </button>
                 </td>
               </tr>
