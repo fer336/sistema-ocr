@@ -1,3 +1,4 @@
+import { Eye, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { StatusBadge } from "./StatusBadge";
 import { cn } from "../lib/cn";
@@ -181,9 +182,10 @@ export function RemitosTable({
                     }}
                     onMouseEnter={() => prefetchFileUrl(remito.id)}
                     onFocus={() => prefetchFileUrl(remito.id)}
-                    className="font-medium text-primary hover:underline"
+                    aria-label={`Ver remito ${remito.numero_remito ?? "sin número"}`}
+                    className="text-primary transition hover:text-primary-hover"
                   >
-                    Ver
+                    <Eye className="h-4 w-4" />
                   </button>
                 </td>
                 <td className="px-4 py-2">
@@ -193,10 +195,10 @@ export function RemitosTable({
                       event.stopPropagation();
                       onDelete(remito);
                     }}
-                    className="font-medium text-error hover:underline"
                     aria-label={`Borrar remito ${remito.numero_remito ?? "sin número"}`}
+                    className="text-error transition hover:text-error/70"
                   >
-                    Borrar
+                    <Trash2 className="h-4 w-4" />
                   </button>
                 </td>
               </tr>
@@ -257,16 +259,19 @@ export function RemitosTable({
                 <button
                   type="button"
                   onClick={() => onPreview(remito)}
-                  className="text-sm font-medium text-primary hover:underline"
+                  aria-label={`Ver remito ${remito.numero_remito ?? "sin número"}`}
+                  className="flex items-center gap-1.5 text-sm font-medium text-primary"
                 >
+                  <Eye className="h-4 w-4" />
                   Ver documento
                 </button>
                 <button
                   type="button"
                   onClick={() => onDelete(remito)}
-                  className="text-sm font-medium text-error hover:underline"
+                  aria-label={`Borrar remito ${remito.numero_remito ?? "sin número"}`}
+                  className="text-error"
                 >
-                  Borrar
+                  <Trash2 className="h-4 w-4" />
                 </button>
               </div>
             </li>
