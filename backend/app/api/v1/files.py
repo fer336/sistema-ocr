@@ -1,0 +1,182 @@
+"""Entrega controlada de archivos (PRD §10, §17, §22).
+
+El bucket es privado: nunca se expone una key ni las credenciales de MinIO,
+sólo una URL prefirmada de vida corta.
+"""
+
+import asyncio
+import logging
+import secrets
+import uuid
+from datetime import UTC, datetime, timedelta
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import RedirectResponse
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_current_user, get_session
+from app.core.config import settings
+from app.db.models import DeliveryNote, ShareLink, SourceFile, User
+from app.schemas.remitos import FileUrlOut, ShareLinkOut, ShareLinksIn
+from app.services import minio_service
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+#: Endpoint público (`/s/{code}`, fuera de `/api/v1`) sin `get_current_user`:
+#: quien abre el link de WhatsApp no tiene sesión en el sistema.
+public_router = APIRouter()
+
+#: Vida de la URL prefirmada que se genera en CADA click del link corto. No
+#: tiene que durar mucho: el navegador la sigue al toque. El `ShareLink`
+#: mismo es el que vive 7 días, no esto.
+REDIRECT_PRESIGN_SECONDS = 60
+
+Variant = Literal["optimized", "original", "preview"]
+
+#: Vencimiento de los links que se mandan por WhatsApp.
+#:
+#: 7 días es el MÁXIMO ABSOLUTO de una URL prefirmada SigV4: la propia firma
+#: acota `X-Amz-Expires` a 604800 segundos y tanto S3 como MinIO rechazan la
+#: request si se pide más. No existe un link prefirmado "que no caduque":
+#: cualquier valor mayor no falla al firmar, falla recién cuando el
+#: destinatario abre el link. Por eso está acá y no en `Settings`: no es un
+#: parámetro ajustable, es un límite del protocolo. El `file-url` normal sigue
+#: usando `MINIO_PRESIGNED_EXPIRES_SECONDS`, que sí es política nuestra.
+SHARE_LINK_EXPIRES = timedelta(days=7)
+
+
+def _pick_key(source_file: SourceFile, variant: Variant) -> str | None:
+    """`optimized` cae a `original` si el optimizado no existe.
+
+    Un archivo puede no tener versión optimizada (subida parcial, archivos
+    previos a que existiera el pipeline), y en ese caso servir el original es
+    mejor que devolver 404 al usuario que quiere ver su remito.
+
+    Ojo con `original` en un PDF: desde que el optimizado es una imagen de la
+    primera página, el original es la única variante con el documento completo.
+    """
+    if variant == "original":
+        return source_file.minio_original_key
+    if variant == "preview":
+        return source_file.minio_preview_key or source_file.minio_optimized_key
+    return source_file.minio_optimized_key or source_file.minio_original_key
+
+
+@router.post("/share-links", response_model=list[ShareLinkOut])
+async def create_share_links(
+    payload: ShareLinksIn,
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> list[ShareLinkOut]:
+    """Links de 7 días para compartir varios remitos (WhatsApp).
+
+    Es tolerante a fallas parciales a propósito: un ID que ya no existe o un
+    remito cuyo archivo no quedó en MinIO se omite del resultado en vez de
+    tumbar el pedido entero. El usuario seleccionó N filas de una tabla que
+    pudo cambiar mientras elegía; que se caiga todo por una sería peor que
+    compartir las que sí están.
+    """
+    wanted = list(dict.fromkeys(payload.remito_ids))
+
+    result = await db.execute(select(DeliveryNote).where(DeliveryNote.id.in_(wanted)))
+    remitos = {remito.id: remito for remito in result.scalars().all()}
+
+    source_file_ids = {remito.source_file_id for remito in remitos.values()}
+    source_files: dict[uuid.UUID, SourceFile] = {}
+    if source_file_ids:
+        files_result = await db.execute(
+            select(SourceFile).where(SourceFile.id.in_(source_file_ids))
+        )
+        source_files = {source_file.id: source_file for source_file in files_result.scalars().all()}
+
+    pending: list[tuple[DeliveryNote, str]] = []
+    for remito_id in wanted:
+        remito = remitos.get(remito_id)
+        if remito is None:
+            logger.info("share-links: remito %s no existe, se omite", remito_id)
+            continue
+        source_file = source_files.get(remito.source_file_id)
+        key = _pick_key(source_file, "optimized") if source_file is not None else None
+        if not key:
+            logger.info("share-links: remito %s no tiene binario en MinIO, se omite", remito_id)
+            continue
+        pending.append((remito, key))
+
+    expires_at = datetime.now(UTC) + SHARE_LINK_EXPIRES
+    codes: list[str] = []
+    for _, key in pending:
+        # `token_urlsafe(6)` ~ 8 caracteres, suficiente entropía para que una
+        # colisión sea estadísticamente irrelevante a esta escala -- igual se
+        # reintenta si `code` ya existe, no se confía a ciegas.
+        code = secrets.token_urlsafe(6)
+        db.add(ShareLink(code=code, minio_key=key, created_by=current_user.id, expires_at=expires_at))
+        codes.append(code)
+    await db.commit()
+
+    return [
+        ShareLinkOut(
+            id=remito.id,
+            cliente=remito.cliente,
+            numero_remito=remito.numero_remito,
+            fecha_hora=remito.fecha_hora,
+            url=f"{settings.public_base_url}/s/{code}",
+        )
+        for (remito, _), code in zip(pending, codes, strict=True)
+    ]
+
+
+@public_router.get("/s/{code}")
+async def resolve_share_link(
+    code: str,
+    db: AsyncSession = Depends(get_session),
+) -> RedirectResponse:
+    """Redirige un link corto a una URL prefirmada de MinIO recién generada.
+
+    Sin sesión a propósito: quien recibe el link por WhatsApp no tiene una
+    cuenta en el sistema. Lo único que protege el archivo acá es que `code`
+    sea impredecible y que venza a los 7 días -- igual que antes, solo que
+    ahora el destinatario nunca ve la URL prefirmada real ni la key de MinIO.
+    """
+    link = await db.get(ShareLink, code)
+    if link is None or link.expires_at < datetime.now(UTC):
+        raise HTTPException(status_code=404, detail="El link no existe o venció")
+
+    try:
+        url = await asyncio.to_thread(
+            minio_service.presigned_get_url, link.minio_key, REDIRECT_PRESIGN_SECONDS
+        )
+    except minio_service.StorageError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return RedirectResponse(url, status_code=302)
+
+
+@router.get("/{remito_id}/file-url", response_model=FileUrlOut)
+async def get_remito_file_url(
+    remito_id: uuid.UUID,
+    variant: Variant = Query("optimized"),
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> FileUrlOut:
+    remito = await db.get(DeliveryNote, remito_id)
+    if remito is None:
+        raise HTTPException(status_code=404, detail="Remito no encontrado")
+
+    source_file = await db.get(SourceFile, remito.source_file_id)
+    if source_file is None:
+        raise HTTPException(status_code=404, detail="Archivo fuente no encontrado")
+
+    key = _pick_key(source_file, variant)
+    if not key:
+        raise HTTPException(status_code=404, detail="El archivo no está almacenado en MinIO")
+
+    try:
+        url = await asyncio.to_thread(minio_service.presigned_get_url, key)
+    except minio_service.StorageError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return FileUrlOut(url=url, expires_in_seconds=settings.minio_presigned_expires_seconds)

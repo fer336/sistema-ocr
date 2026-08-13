@@ -1,128 +1,215 @@
-import base64
-import uuid
-from datetime import date as date_type
-from datetime import time as time_type
+"""Orquestación del procesamiento de un archivo fuente.
 
-from sqlalchemy import select
+Lo invoca el WORKER, no una petición HTTP (PRD §19): el OCR no debe bloquear
+la respuesta de un upload múltiple.
+
+Flujo por archivo:
+
+    representación OCR-ready  (siempre imágenes: páginas rasterizadas o la foto)
+        ↓
+    ocr_service.extract       (salida cruda del modelo)
+        ↓
+    extraction_service.normalize
+        ↓
+    dedup nivel 2 + persistencia por remito
+        ↓
+    rollup de source_files.status
+"""
+
+import logging
+from datetime import UTC, datetime
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DeliveryNote, SourceFile
-from app.schemas.internal import DeliveryNoteCreate
-from app.services import openai_extraction, pdf
+from app.db.models import SourceFile
+from app.repositories import delivery_notes as delivery_notes_repo
+from app.schemas.processing import DeliveryNoteDraft, OCRDocument, ProcessingResult
+from app.services import extraction_service, image_service, ocr_service, pdf_service
 from app.services.delivery_notes import persist_delivery_note
-from app.services.document_number import normalize_document_number
+
+logger = logging.getLogger(__name__)
+
+PDF_MIME_TYPE = "application/pdf"
+
+#: Estados desde los que NO se reprocesa salvo pedido explícito.
+TERMINAL_STATUSES = frozenset({"processed", "requires_review", "partial", "duplicate"})
 
 
-def _page_images(file_bytes: bytes, mime_type: str) -> list[bytes]:
-    if mime_type == "application/pdf":
-        return pdf.pdf_to_images(file_bytes)
-    return [file_bytes]
+def build_ocr_documents(file_bytes: bytes, mime_type: str) -> list[OCRDocument]:
+    """Representación OCR-ready del archivo: SIEMPRE imágenes JPEG.
 
+    - Imagen: se normaliza a JPEG (orientación/modo/resolución) y va entera.
+    - PDF: se rasteriza página por página y cada página sigue el mismo camino
+      que una imagen suelta. Así se conserva `page_number` en cada remito
+      (PRD §21) también para los PDF de una sola página.
 
-def _parse_date(value: str | None) -> date_type | None:
-    if not value:
-        return None
-    try:
-        return date_type.fromisoformat(value)
-    except ValueError:
-        return None
-
-
-def _parse_time(value: str | None) -> time_type | None:
-    if not value:
-        return None
-    try:
-        return time_type.fromisoformat(value)
-    except ValueError:
-        return None
-
-
-async def remitos_persistidos_response(db: AsyncSession, source_file_id: uuid.UUID) -> dict:
-    """Devuelve los remitos YA guardados de un source_file con la MISMA forma
-    que process_source_file ("detected_remitos" + "remitos").
-
-    Es la respuesta del retry idempotente del endpoint /process: cuando el
-    archivo ya fue procesado (o ya persistió remitos), no se vuelve a llamar a
-    OpenAI ni se crean duplicados; se responde con lo que ya está en la BD,
-    ordenado por página y fecha de creación como los lista el resto del
-    sistema. individual_file_base64 va vacío porque acá no se dispone del
-    binario de la extracción original.
+    Ya no existe la rama de "PDF nativo al modelo": mandar bytes PDF hacía que
+    el mismo remito viajara con dos representaciones distintas según su origen
+    (PDF vs foto), y dejaba la copia guardada en MinIO como PDF sin recomprimir.
+    Unificar en JPEG deja un solo pipeline de calidad/peso para todo.
     """
-    result = await db.execute(
-        select(DeliveryNote)
-        .where(DeliveryNote.source_file_id == source_file_id)
-        .order_by(DeliveryNote.page_number, DeliveryNote.created_at)
-    )
-    notes = list(result.scalars().all())
-    remitos = [
-        {
-            "id": str(note.id),
-            "status": note.status,
-            "page": note.page_number,
-            "client_number": note.client_number,
-            "client_name": note.client_name,
-            "document_number": note.document_number,
-            "individual_file_base64": "",
-        }
-        for note in notes
-    ]
-    return {"detected_remitos": len(remitos), "remitos": remitos}
+    if mime_type == PDF_MIME_TYPE:
+        return [
+            OCRDocument(
+                data=image_service.to_ocr_jpeg(page),
+                mime_type="image/jpeg",
+                page_number=index,
+            )
+            for index, page in enumerate(pdf_service.pdf_to_images(file_bytes), start=1)
+        ]
+
+    return [OCRDocument(data=image_service.to_ocr_jpeg(file_bytes), mime_type="image/jpeg")]
+
+
+def _rollup_status(
+    *,
+    documents: int,
+    failed_documents: int,
+    note_statuses: list[str],
+) -> str:
+    """Estado final del archivo (PRD §11).
+
+    - todo falló (fallo duro) → `error`, que es el único estado reintentable
+    - algo falló pero algo salió → `partial`
+    - cero remitos detectados, o alguno requiere revisión → `requires_review`
+    - todos procesados → `processed`
+    """
+    if documents and failed_documents == documents:
+        return "error"
+    if failed_documents:
+        return "partial"
+    if not note_statuses:
+        return "requires_review"
+    if any(status == "requires_review" for status in note_statuses):
+        return "requires_review"
+    return "processed"
 
 
 async def process_source_file(
     db: AsyncSession,
     source_file: SourceFile,
     file_bytes: bytes,
-    mime_type: str,
-    drive_file_link: str | None,
-) -> dict:
-    """Pipeline completo por archivo: rasteriza y extrae UN remito por página
-    (decisión del usuario: se eliminó la detección de "1 o 2 remitos por
-    página" con boxes/foco, que generaba remitos duplicados).
+    *,
+    force: bool = False,
+) -> ProcessingResult:
+    """Procesa un archivo completo y actualiza su estado.
 
-    Cada página del PDF es un remito: no hay crop por columnas ni shortcuts
-    de vista previa recortada, la extracción de datos siempre ve la página
-    completa.
+    Idempotencia: si el archivo ya está en un estado terminal y no se pidió
+    `force`, se responde con lo que ya está persistido sin volver a llamar al
+    modelo (evita duplicar remitos ante un reintento del worker).
+
+    `force` es el reproceso explícito del usuario: ignora el estado terminal
+    y vuelve a extraer.
     """
-    pages = _page_images(file_bytes, mime_type)
+    if source_file.status in TERMINAL_STATUSES and not force:
+        existing = await delivery_notes_repo.list_by_source_file(db, source_file.id)
+        return ProcessingResult(
+            source_file_status=source_file.status,
+            detected_remitos=len(existing),
+            remitos=[
+                {
+                    "id": str(note.id),
+                    "status": note.status,
+                    "page_number": note.page_number,
+                    "detection_index": note.detection_index,
+                    "numero_remito": note.numero_remito,
+                    "numero_cliente": note.numero_cliente,
+                    "cliente": note.cliente,
+                }
+                for note in existing
+            ],
+        )
+
+    # Siempre se limpian los remitos previos antes de extraer: en la primera
+    # pasada no hay ninguno, y en un reproceso esto es lo que evita acumular
+    # una copia del mismo remito por cada reintento.
+    await delivery_notes_repo.delete_by_source_file(db, source_file.id)
+    await db.flush()
+
+    documents = build_ocr_documents(file_bytes, source_file.mime_type)
 
     created: list[dict] = []
-    total_detected = 0
+    note_statuses: list[str] = []
+    failed_documents = 0
+    last_error: str | None = None
 
-    for page_number, page_image in enumerate(pages, start=1):
-        extracted = await openai_extraction.extract_delivery_note(page_image)
+    for document in documents:
+        try:
+            ocr_result = await ocr_service.extract(document.data, document.mime_type)
+        except ocr_service.OCRError as exc:
+            # Una página que falla no debe tumbar las demás: el archivo
+            # termina en `partial` si al menos otra dio remitos.
+            failed_documents += 1
+            last_error = str(exc)
+            logger.warning(
+                "OCR falló para source_file=%s página=%s: %s",
+                source_file.id,
+                document.page_number,
+                exc,
+            )
+            continue
 
-        # Formato canónico "B 5001 00123456": el modelo a veces agrega
-        # guiones u omite los prefijos, y el normalizador lo corrige.
-        document_number = normalize_document_number(extracted.document_number)
+        normalized = extraction_service.normalize(ocr_result)
+        if normalized.error:
+            # "El modelo devuelve una estructura inválida" es criterio
+            # explícito de revisión en PRD §13, no un error técnico.
+            failed_documents += 1
+            last_error = f"{normalized.error_type}: {normalized.message}"
+            logger.warning(
+                "Salida inválida del modelo para source_file=%s página=%s: %s",
+                source_file.id,
+                document.page_number,
+                last_error,
+            )
+            continue
 
-        payload = DeliveryNoteCreate(
-            source_file_id=source_file.id,
-            document_number=document_number,
-            document_date=_parse_date(extracted.document_date),
-            document_time=_parse_time(extracted.document_time),
-            client_number=extracted.client_number,
-            client_name=extracted.client_name,
-            drive_file_id=source_file.drive_file_id,
-            drive_file_link=drive_file_link,
-            page_number=page_number,
-            confidence=extracted.confidence,
-            extraction_payload=extracted.model_dump(),
-        )
+        for remito in normalized.remitos:
+            draft = DeliveryNoteDraft(
+                source_file_id=source_file.id,
+                cliente=remito.cliente,
+                numero_cliente=remito.numero_cliente,
+                fecha_hora=remito.fecha_hora_utc,
+                numero_remito=remito.numero_remito,
+                comentarios=remito.comentarios,
+                page_number=document.page_number,
+                detection_index=remito.detection_index,
+                requires_review=remito.requires_review,
+                extraction_payload={**remito.payload, "ocr_model": ocr_result.model},
+            )
+            note_id, note_status = await persist_delivery_note(db, draft)
+            note_statuses.append(note_status)
+            created.append(
+                {
+                    "id": str(note_id),
+                    "status": note_status,
+                    "page_number": document.page_number,
+                    "detection_index": remito.detection_index,
+                    "numero_remito": remito.numero_remito,
+                    "numero_cliente": remito.numero_cliente,
+                    "cliente": remito.cliente,
+                }
+            )
 
-        note_id, note_status = await persist_delivery_note(db, payload)
-        total_detected += 1
+    status = _rollup_status(
+        documents=len(documents),
+        failed_documents=failed_documents,
+        note_statuses=note_statuses,
+    )
 
-        created.append(
-            {
-                "id": str(note_id),
-                "status": note_status,
-                "page": page_number,
-                "client_number": extracted.client_number,
-                "client_name": extracted.client_name,
-                "document_number": document_number,
-                "individual_file_base64": base64.b64encode(page_image).decode("ascii"),
-            }
-        )
+    source_file.status = status
+    source_file.detected_remitos = len(created)
+    source_file.processed_at = datetime.now(UTC)
+    if status == "error":
+        source_file.attempts += 1
+        source_file.error_message = (last_error or "OCR falló")[:500]
+    else:
+        source_file.error_message = last_error[:500] if last_error else None
 
-    return {"detected_remitos": total_detected, "remitos": created}
+    await db.flush()
+
+    return ProcessingResult(
+        source_file_status=status,
+        detected_remitos=len(created),
+        remitos=created,
+        error_message=last_error,
+    )

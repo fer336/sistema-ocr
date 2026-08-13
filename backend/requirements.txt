@@ -5,6 +5,11 @@ asyncpg
 alembic
 pydantic-settings
 python-dotenv
-openai
+python-multipart
+minio
+google-genai
+google-auth
+pyjwt
 pymupdf
 pillow
+tzdata

@@ -47,6 +47,11 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Downgrade schema."""
     for column in _DROPPED_COLUMNS:
+        # `signed` y `crop_index` se re-crean abajo con su tipo real (boolean /
+        # integer). Sin este skip el downgrade intentaba agregarlos dos veces y
+        # moría con DuplicateColumnError.
+        if column in ("signed", "crop_index"):
+            continue
         op.add_column(
             "delivery_notes",
             sa.Column(column, sa.Text(), nullable=True),
