@@ -25,9 +25,7 @@ config:
   dev_file: .env
 
 health:
-  # Completar con la URL pública real antes de la primera release; sin
-  # esto, validate-tag en release.yml falla (por diseño, INF-503).
-  url: ""
+  url: "https://santini.serviciospinamar.com/health"
   health_path: /health
   version_path: /version
   retries: 10
@@ -35,23 +33,22 @@ health:
 
 migrations:
   # Perfil A, réplica única de `backend`: corren en el arranque del
-  # contenedor, antes de servir tráfico (entrypoint.sh, RUN_MIGRATIONS=1).
-  # `worker` comparte imagen pero nunca migra (INF-321).
+  # contenedor, antes de servir tráfico (entrypoint.sh). Ya no son
+  # condicionales por RUN_MIGRATIONS -- no existe un servicio "worker"
+  # aparte con el que puedan pisarse (ver deviations más abajo).
   strategy: entrypoint
 
 app:
   tests: required
   lockfile: package-lock.json
 
+# Solo dos servicios de Swarm. Postgres/MinIO son infraestructura remota ya
+# existente (no los levanta este stack) y el worker de OCR corre embebido
+# en el contenedor de `backend` -- ver docs/DEVIATIONS.md.
 services:
   - { name: backend,  image: ghcr.io/fer336/remitos-backend,  needs_secret: true, stateful: false }
-  - { name: worker,   image: ghcr.io/fer336/remitos-backend,  needs_secret: true, stateful: false }
   - { name: frontend, image: ghcr.io/fer336/remitos-frontend, needs_secret: false, stateful: false }
-  # postgres/minio: imagen propia (docker/postgres, docker/minio) que envuelve
-  # la oficial con un entrypoint que carga remitos_env (Anexo B) -- por eso
-  # needs_secret: true acá también, a diferencia de usar la imagen oficial
-  # directa con variables de entorno planas.
-  - { name: postgres, image: ghcr.io/fer336/remitos-postgres, needs_secret: true, stateful: true }
-  - { name: minio,    image: ghcr.io/fer336/remitos-minio,    needs_secret: true, stateful: true }
 
-deviations: []
+deviations:
+  - postgres-minio-remote-not-self-hosted
+  - ocr-worker-embedded-in-backend

@@ -3,111 +3,117 @@
 # antes del deploy, este compose solo lo referencia. `docker-compose.override.yml`
 # (auto-cargado por `docker compose` en desarrollo local) lo redefine como
 # secret respaldado por archivo, para poder levantar el stack sin Portainer.
+#
+# Solo dos servicios (backend, frontend) -- ver docs/DEVIATIONS.md:
+# Postgres/MinIO son infraestructura remota ya existente (no los levanta
+# este stack) y el worker de OCR corre embebido en el contenedor de
+# `backend` en vez de ser un tercer servicio de Swarm (ver
+# `backend/entrypoint.sh`). Despliegue vía Portainer en modo Swarm, detrás
+# de Traefik (red externa `network_public`) -- por eso `deploy:` en vez de
+# `restart:` y labels de Traefik en vez de `ports:` publicados.
 secrets:
   remitos_env:
     external: true
 
+networks:
+  network_public:
+    external: true
+  remitos-internal:
+    driver: overlay
+    internal: true
+
 services:
-  postgres:
-    # Imagen propia (docker/postgres/): mismo postgres:16.4-alpine, con un
-    # entrypoint que carga las credenciales desde remitos_env (Anexo B) en
-    # vez de recibirlas como variable de entorno plana. Tag pineado, igual
-    # que backend/frontend -- lo actualiza release.yml.
-    image: ghcr.io/fer336/remitos-postgres:v0.0.0
-    restart: unless-stopped
-    secrets:
-      - remitos_env
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      # Sin -U/-d a propósito: pg_isready no necesita autenticar para
-      # reportar "accepting connections", solo que el server responda al
-      # handshake -- y el healthcheck corre como proceso aparte, sin ver
-      # las variables que el wrapper cargó en runtime dentro de PID 1.
-      test: ["CMD-SHELL", "pg_isready"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
-  minio:
-    # Imagen propia (docker/minio/), mismo mecanismo que postgres.
-    image: ghcr.io/fer336/remitos-minio:v0.0.0
-    restart: unless-stopped
-    secrets:
-      - remitos_env
-    volumes:
-      - miniodata:/data
-    healthcheck:
-      # `mc ready local` es el healthcheck oficial de la imagen: consulta
-      # /minio/health/live sin depender de curl/wget, que la imagen no trae.
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
-  backend: &backend-common
+  backend:
     # El pipeline de release (release.yml) reescribe este tag literal a
     # vX.Y.Z en cada release (INFRASTRUCTURE.md §6.8) -- no es una variable
     # de entorno: Portainer despliega exactamente lo que está commiteado
     # acá. v0.0.0 = placeholder hasta la primera release real.
     image: ghcr.io/fer336/remitos-backend:v0.0.0
-    restart: unless-stopped
-    # Lista simple, no el formato con `condition:` -- Portainer (y Swarm)
-    # rechaza esa forma extendida ("depends_on must be a list"). Como no
-    # ordena por healthcheck, el arranque en frío se cubre reintentando
-    # la migración en `entrypoint.sh` en vez de acá.
-    depends_on:
-      - postgres
-      - minio
+    networks:
+      - network_public
+      - remitos-internal
     secrets:
       - remitos_env
     environment:
-      # Único operacional que no es config de la app: decide si este
-      # servicio corre `alembic upgrade head` al arrancar. El worker
-      # comparte imagen pero NUNCA migra (dos `alembic upgrade` a la vez
-      # se pisan).
-      RUN_MIGRATIONS: "1"
       # INF-502: GET /version. No vive en remitos_env -- es metadata de
       # deployment (qué release corre), no config de la app. release.yml
       # la pinea junto a las imágenes en cada release (ver pin script).
       APP_VERSION: v0.0.0
-    ports:
-      - "${BACKEND_PORT:-8000}:8000"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 30s
+    deploy:
+      mode: replicated
+      # Perfil A, réplica única (INFRASTRUCTURE.md): el worker embebido en
+      # este contenedor asume un solo proceso consumiendo la cola de OCR.
+      # Escalar a más réplicas duplicaría ese consumo -- no subir sin antes
+      # sacar el worker a un servicio aparte con locking propio.
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=network_public"
 
-  worker:
-    <<: *backend-common
-    # Arranca detrás del backend para que las migraciones ya hayan corrido,
-    # pero sin garantía de orden real (ver comentario en `backend`). Si
-    # consulta antes de que la migración termine, falla y `restart:
-    # unless-stopped` lo reintenta hasta que el schema ya exista.
-    depends_on:
-      - backend
-      - postgres
-      - minio
-    environment:
-      RUN_MIGRATIONS: "0"
-    ports: []
-    healthcheck:
-      disable: true
-    command: ["python", "-m", "app.worker.run"]
+        # /api/* -- endpoints de la aplicación.
+        - "traefik.http.routers.remitos-api.rule=Host(`santini.serviciospinamar.com`) && PathPrefix(`/api`)"
+        - "traefik.http.routers.remitos-api.entrypoints=websecure"
+        - "traefik.http.routers.remitos-api.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.remitos-api.priority=100"
+
+        # /s/{code} -- redirect público de links de WhatsApp (fuera de
+        # /api/v1 a propósito, ver app/main.py). Sin sesión.
+        - "traefik.http.routers.remitos-share.rule=Host(`santini.serviciospinamar.com`) && PathPrefix(`/s/`)"
+        - "traefik.http.routers.remitos-share.entrypoints=websecure"
+        - "traefik.http.routers.remitos-share.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.remitos-share.priority=100"
+
+        # /health y /version -- INF-502/503, los consulta release.yml tras
+        # cada deploy.
+        - "traefik.http.routers.remitos-health.rule=Host(`santini.serviciospinamar.com`) && (Path(`/health`) || Path(`/version`))"
+        - "traefik.http.routers.remitos-health.entrypoints=websecure"
+        - "traefik.http.routers.remitos-health.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.remitos-health.priority=90"
+
+        - "traefik.http.services.remitos-backend.loadbalancer.server.port=8000"
 
   frontend:
     # Ídem backend: tag literal, reescrito por release.yml en cada release.
     image: ghcr.io/fer336/remitos-frontend:v0.0.0
-    restart: unless-stopped
+    networks:
+      - network_public
+      - remitos-internal
     depends_on:
       - backend
-    # nginx dentro de la imagen sirve el build y proxea /api -> backend:8000.
+    # nginx dentro de la imagen sirve el build; el proxy /api -> backend:8000
+    # que trae de fábrica queda sin uso porque Traefik ya enruta /api directo
+    # al backend (ver router remitos-api arriba) antes de llegar acá.
     # VITE_GOOGLE_CLIENT_ID/VITE_API_URL se hornean en build time (CI), no acá.
-    ports:
-      - "${FRONTEND_PORT:-8080}:80"
-
-volumes:
-  pgdata:
-  miniodata:
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=network_public"
+        # Catch-all de menor prioridad: todo lo que no matcheó los routers
+        # del backend cae acá.
+        - "traefik.http.routers.remitos-frontend.rule=Host(`santini.serviciospinamar.com`)"
+        - "traefik.http.routers.remitos-frontend.entrypoints=websecure"
+        - "traefik.http.routers.remitos-frontend.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.remitos-frontend.priority=1"
+        - "traefik.http.services.remitos-frontend.loadbalancer.server.port=80"

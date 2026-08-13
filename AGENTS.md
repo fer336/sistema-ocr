@@ -8,27 +8,34 @@ INFRASTRUCTURE.md · infra.project.yml · backend/env.example · frontend/.env.e
 ## Project shape
 
 - Repository: `fer336/sistema-ocr`.
-- Images: `ghcr.io/fer336/remitos-backend`, `ghcr.io/fer336/remitos-frontend`,
-  `ghcr.io/fer336/remitos-postgres`, `ghcr.io/fer336/remitos-minio`.
-- Services: `postgres`, `minio`, `backend`, `worker`, `frontend`.
-- `worker` reuses the **same image** as `backend` (same `backend/Dockerfile`, only the
-  `command:` differs). Never build or publish a separate worker image.
-- `postgres`/`minio` are NOT the bare upstream images: `docker/postgres/` and
-  `docker/minio/` wrap them with an entrypoint that loads `remitos_env` (Anexo B
-  shell/entrypoint adapter) before starting the real process, so their credentials never
-  sit as plain container environment variables either. Rebuild these two only when the
-  wrapper script changes or the pinned upstream tag needs bumping — not on every app change.
+- Images: `ghcr.io/fer336/remitos-backend`, `ghcr.io/fer336/remitos-frontend`.
+- Production is Portainer in **Swarm** mode behind **Traefik** (external network
+  `network_public`), not standalone Compose. Only two Swarm services: `backend`,
+  `frontend`. See `docs/DEVIATIONS.md` for why (proposed, needs human sign-off):
+  - Postgres/MinIO are pre-existing **remote** infrastructure, not deployed by this
+    stack — `docker/postgres/` and `docker/minio/` (wrapper images with the Anexo B
+    shell/entrypoint adapter) only exist for the optional local dev override.
+  - The OCR worker (`python -m app.worker.run`) runs **embedded** in the `backend`
+    container as a background process (see `backend/entrypoint.sh`), not as a
+    separate Swarm service. This assumes `backend` runs at exactly 1 replica
+    (Perfil A) — scaling it would duplicate the queue consumer.
+- Swarm rejects two things a plain Compose Specification file allows: the top-level
+  `name:` field, and `depends_on` in the extended `condition: service_healthy` form
+  (only the plain list form works). `docker-compose.yml` avoids both on purpose —
+  don't reintroduce them.
 - Backend: FastAPI + SQLAlchemy + Alembic (Python 3.12), `backend/`, migrations in
   `backend/alembic/versions/`, run at container startup before serving traffic
-  (`migrations.strategy: entrypoint` in `infra.project.yml`) — `worker` never migrates.
+  (`migrations.strategy: entrypoint` in `infra.project.yml`).
 - Frontend: Vite + React 19 + TypeScript, `frontend/`, linted with `oxlint`
-  (`npm run lint`), served by nginx which proxies `/api` → `backend:8000`.
-- `GET /health` → `{"status":"ok"}`, `GET /version` → `{"version":"vX.Y.Z"}` (backend only —
-  `worker`/`frontend`/`postgres`/`minio` don't need their own, per INF-500/502).
+  (`npm run lint`). Traefik routes `/api`, `/s/*`, `/health`, `/version` straight to
+  `backend`; everything else (catch-all, lowest priority) goes to `frontend`. The
+  nginx `/api` proxy baked into the frontend image is unreachable in production
+  (Traefik intercepts first) but harmless — don't remove it without checking the
+  local `docker-compose.override.yml` flow still needs it.
+- `GET /health` → `{"status":"ok"}`, `GET /version` → `{"version":"vX.Y.Z"}` (backend only).
 - Production runtime config: a single Docker Secret `remitos_env`, declared `external: true`
-  and mounted at `/run/secrets/remitos_env`. All four services that need config
-  (`backend`, `worker`, `postgres`, `minio`) declare it — no INF-211 deviation, see
-  `docs/DEVIATIONS.md`.
+  and mounted at `/run/secrets/remitos_env`. Only `backend` declares it (`frontend` doesn't
+  need runtime config, its `VITE_*` values are baked in at build time).
 
 Key rules:
 

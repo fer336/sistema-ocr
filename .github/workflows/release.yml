@@ -41,8 +41,6 @@ permissions:
 env:
   BACKEND_IMAGE: ghcr.io/fer336/remitos-backend
   FRONTEND_IMAGE: ghcr.io/fer336/remitos-frontend
-  POSTGRES_IMAGE: ghcr.io/fer336/remitos-postgres
-  MINIO_IMAGE: ghcr.io/fer336/remitos-minio
 
 jobs:
   # ---------------------------------------------------------------- 1. SemVer
@@ -198,35 +196,15 @@ jobs:
         # (client id != client secret), por eso va como *repository variable*
         # `vars.VITE_GOOGLE_CLIENT_ID` y no como secret; validate-tag ya
         # verificó que no esté vacío para no hornear un placeholder roto.
-        # VITE_API_URL es fijo: nginx (frontend/nginx.conf) proxea /api hacia
-        # backend:8000 dentro de la red de compose conservando el prefijo.
+        # VITE_API_URL es fijo: Traefik enruta /api directo al backend antes
+        # de llegar al frontend (ver labels en docker-compose.yml).
 
-      # 4/5/6 — postgres/minio envueltos (docker/postgres, docker/minio):
-      # mismo Postgres/MinIO oficial, con un entrypoint que carga sus
-      # credenciales desde remitos_env en vez de recibirlas como variable
-      # de entorno plana (cierra INF-211 vía el adaptador shell/entrypoint
-      # del Anexo B). Se versionan con el mismo tag que el resto de la
-      # release aunque el Postgres/MinIO de base no haya cambiado -- Perfil
-      # A no tiene "release parcial", todo el stack se pinea junto.
-      - name: Build and push postgres image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./docker/postgres
-          file: ./docker/postgres/Dockerfile
-          push: true
-          tags: ${{ env.POSTGRES_IMAGE }}:${{ github.ref_name }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build and push minio image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./docker/minio
-          file: ./docker/minio/Dockerfile
-          push: true
-          tags: ${{ env.MINIO_IMAGE }}:${{ github.ref_name }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+        # postgres/minio (docker/postgres, docker/minio) NO se buildean ni
+        # publican acá: no forman parte del stack desplegado (son
+        # infraestructura remota ya existente, ver docs/DEVIATIONS.md).
+        # Esas imágenes siguen existiendo para el flujo de desarrollo local
+        # opcional (docker-compose.override.yml), que las buildea desde
+        # fuente en la máquina del desarrollador, nunca desde GHCR.
 
       # 7/8 — actualizar y pinear el compose sobre la rama por defecto.
       - name: Switch to default branch

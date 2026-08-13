@@ -1,9 +1,13 @@
 # Sanitini — Remitos
 
-OCR de remitos: backend FastAPI (`backend/`), frontend Vite + React (`frontend/`),
-PostgreSQL y MinIO. En producción los cinco corren en contenedores (Docker Compose,
-desplegado vía Portainer); en desarrollo local **solo Postgres y MinIO corren en
-Docker** — backend y frontend corren nativos (venv / `npm run dev`).
+OCR de remitos: backend FastAPI (`backend/`), frontend Vite + React (`frontend/`).
+Postgres y MinIO son infraestructura remota ya existente, no las levanta este
+proyecto (ver `docs/DEVIATIONS.md`). En producción, backend y frontend corren como
+los dos únicos servicios de un stack de **Docker Swarm** (Portainer, detrás de
+Traefik); el worker de OCR corre embebido dentro del contenedor de backend, no como
+servicio aparte. En desarrollo local, backend y frontend corren nativos (venv /
+`npm run dev`) — Postgres/MinIO locales en Docker son opcionales, solo para quien no
+quiera apuntar directo a los remotos.
 
 ## Desarrollo local
 
@@ -23,9 +27,14 @@ npm run dev
 ```
 
 Detalle en [`backend/README.md`](backend/README.md) y [`frontend/README.md`](frontend/README.md).
-Levantar el stack completo en contenedores (`docker compose up -d` sin filtrar
-servicios) sirve para probar la imagen tal como se despliega en producción, pero no es
-el loop de desarrollo del día a día.
+
+`docker compose up -d` sin filtrar servicios (backend + frontend incluidos) arranca
+los contenedores tal como se buildean en CI, pero **sin puertos publicados**: en
+producción el único punto de entrada es Traefik (labels en `docker-compose.yml`), que
+no existe en un Compose local. Para probar esas dos imágenes localmente hay que
+publicar puertos a mano (`docker compose run --rm -p 8000:8000 backend ...` o agregar
+un override propio, no versionado) — no es el loop de desarrollo del día a día de
+todas formas.
 
 Solo hacen falta **dos** `.env` en local -- `backend/.env` y `frontend/.env`, nada en la
 raíz del repo. `docker-compose.override.yml` reusa `backend/.env` como fuente de
@@ -61,10 +70,10 @@ Antes de la primera release hay que cargar esto en
 | Variable | `VITE_GOOGLE_CLIENT_ID`  | Google OAuth *client id* (público: queda embebido en el bundle del frontend). |
 
 La configuración de runtime (contraseñas, API keys, JWT) **no** va a GitHub: vive en el
-único Docker Secret `remitos_env` administrado desde Portainer y montado en
-`/run/secrets/remitos_env`. Lo consumen los cuatro servicios con estado/config real:
-`backend`, `worker`, `postgres` y `minio` (estos dos últimos vía la imagen envuelta en
-`docker/postgres/` y `docker/minio/` — ver `docs/DEVIATIONS.md`).
+único Docker Secret `remitos_env` administrado desde Portainer (Secrets → remitos_env,
+el mismo entorno Swarm donde ya está el stack) y montado en `/run/secrets/remitos_env`.
+Lo consume únicamente `backend` (el worker corre embebido en ese mismo contenedor;
+`frontend` no tiene config de runtime, sus `VITE_*` quedan horneados en el build).
 
 ### Contenido de `remitos_env` en Portainer
 
@@ -72,18 +81,18 @@ Crear una sola vez en **Portainer → Secrets → remitos_env**, pegando algo as
 valores reales, nunca estos):
 
 ```env
-DATABASE_URL=postgresql+asyncpg://remitos:<password>@postgres:5432/remitos
-POSTGRES_USER=remitos
-POSTGRES_PASSWORD=<password>          # debe coincidir con el de arriba
-POSTGRES_DB=remitos
+# Postgres y MinIO son remotos (infraestructura ya existente, no la levanta
+# este stack) -- acá van los datos de CONEXIÓN, no credenciales de bootstrap
+# (no hace falta POSTGRES_USER/PASSWORD/DB ni MINIO_ROOT_USER/PASSWORD: eso
+# solo lo necesita docker/postgres y docker/minio para el flujo de dev local
+# opcional, que usa backend/.env, no este secret).
+DATABASE_URL=postgresql+asyncpg://<user>:<password>@91.99.162.240:5432/santini
 
-MINIO_ENDPOINT=minio:9000
+MINIO_ENDPOINT=s3.qeva.xyz
 MINIO_ACCESS_KEY=<access-key>
 MINIO_SECRET_KEY=<secret-key>
-MINIO_ROOT_USER=<access-key>          # debe coincidir con MINIO_ACCESS_KEY
-MINIO_ROOT_PASSWORD=<secret-key>      # debe coincidir con MINIO_SECRET_KEY
-MINIO_BUCKET=remitos
-MINIO_SECURE=false
+MINIO_BUCKET=santini-remitos
+MINIO_SECURE=true
 MINIO_PRESIGNED_EXPIRES_SECONDS=900
 
 GEMINI_API_KEY=<key>
@@ -109,13 +118,15 @@ SESSION_COOKIE_NAME=remitos_session
 SESSION_COOKIE_SECURE=true
 SESSION_COOKIE_SAMESITE=lax
 
-CORS_ORIGINS=https://<dominio-del-frontend>
+CORS_ORIGINS=https://santini.serviciospinamar.com
+PUBLIC_BASE_URL=https://santini.serviciospinamar.com
 ```
 
-`POSTGRES_USER/PASSWORD/DB` y `MINIO_ROOT_USER/PASSWORD` están duplicados a propósito
-(una vez sueltos, para que `docker/postgres` y `docker/minio` los lean vía su wrapper de
-entrypoint; y embebidos en `DATABASE_URL`/`MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY`, para que
-el backend los use) — mismo patrón que ilustra `INFRASTRUCTURE.md` §10.
+`MINIO_ENDPOINT`/`DATABASE_URL` apuntan a los hosts remotos reales, no a nombres de
+servicio de Docker (`postgres`/`minio`) -- ya no existen contenedores con esos nombres
+en este stack. `PUBLIC_BASE_URL` es la base de los links cortos de WhatsApp
+(`{PUBLIC_BASE_URL}/s/{code}`) -- sin el dominio real, esos links no funcionan para
+quien los recibe fuera del sistema.
 
 ### Pendiente: nombre de archivo
 
