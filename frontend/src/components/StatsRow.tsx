@@ -96,6 +96,9 @@ export function StatsRow({ stats }: StatsRowProps) {
   ];
 
   return (
+    // 7 tiles: en mobile la cuadrícula es de 2 columnas, así que el último
+    // tile quedaría solo en la fila (2+2+2+1). La clase del tile lo corrige
+    // (ver `cardClass`); este contenedor no cambia.
     <div className="grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-7">
       {tiles.map((tile) => {
         const content = (
@@ -113,8 +116,11 @@ export function StatsRow({ stats }: StatsRowProps) {
             {tile.hint && <p className="text-xs text-ink-muted">{tile.hint}</p>}
           </>
         );
+        // En mobile (max-md) el 7º tile (Duplicados) ocupa la fila completa
+        // para que ningún tile quede solo en la cuadrícula de 2 columnas;
+        // `max-md` lo acota para que md (4+3) y xl (7) mantengan su layout.
         const cardClass =
-          "rounded-xl border border-border bg-surface p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md";
+          "max-md:last:odd:col-span-2 rounded-xl border border-border bg-surface p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md";
         // Solo "Errores" es clickeable, y solo si hay algo que ver -- el
         // resto de los tiles no tiene una pantalla dedicada a la que ir.
         if ("to" in tile && tile.to && tile.value > 0) {

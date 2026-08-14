@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { FileText } from "lucide-react";
 import { StatsRow } from "../components/StatsRow";
 import { StatusBadge } from "../components/StatusBadge";
 import { getRemitoStats, listRemitos } from "../lib/api";
@@ -46,58 +47,90 @@ export function Dashboard() {
       )}
 
       {loading ? (
-        <p className="py-8 text-center text-sm text-ink-muted">Cargando...</p>
+        // Skeleton que refleja el layout final (tiles + lista) para evitar
+        // saltos de layout al terminar la carga; `aria-hidden` + sr-only
+        // mantienen el anuncio accesible sin duplicar contenido.
+        <>
+          <p className="sr-only">Cargando...</p>
+          <div className="space-y-6" aria-hidden="true">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-7">
+              {Array.from({ length: 7 }, (_, i) => (
+                <div key={i} className="h-36 animate-pulse rounded-xl border border-border bg-surface-raised" />
+              ))}
+            </div>
+            <div className="space-y-2">
+              {Array.from({ length: 5 }, (_, i) => (
+                <div key={i} className="h-14 animate-pulse rounded-lg border border-border bg-surface-raised" />
+              ))}
+            </div>
+          </div>
+        </>
       ) : (
         <>
-          {stats && <StatsRow stats={stats} />}
-
-          <div className="flex flex-wrap gap-3">
-            <Link
-              to="/escanear"
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary-hover"
-            >
-              Escanear remitos
-            </Link>
-            <Link
-              to="/remitos"
-              className="rounded-lg border border-border bg-surface px-4 py-2 text-sm font-medium text-ink transition hover:bg-surface-raised"
-            >
-              Ver todos los remitos
-            </Link>
-            {pendingReview > 0 && (
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h1 className="text-lg font-semibold text-ink">Dashboard</h1>
+              <p className="text-sm text-ink-muted">Resumen de remitos y archivos</p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               <Link
-                to="/revision"
-                className="rounded-lg border border-warning/40 bg-warning-soft px-4 py-2 text-sm font-medium text-warning transition hover:bg-warning-soft/70"
+                to="/escanear"
+                className="rounded-lg bg-primary px-4 py-2.5 text-center text-sm font-medium text-white transition hover:bg-primary-hover"
               >
-                Revisar {pendingReview} remito{pendingReview === 1 ? "" : "s"}
+                Escanear remitos
               </Link>
-            )}
+              <Link
+                to="/remitos"
+                className="rounded-lg border border-border bg-surface px-4 py-2.5 text-center text-sm font-medium text-ink transition hover:bg-surface-raised"
+              >
+                Ver todos los remitos
+              </Link>
+              {pendingReview > 0 && (
+                <Link
+                  to="/revision"
+                  className="rounded-lg border border-warning/40 bg-warning-soft px-4 py-2.5 text-center text-sm font-medium text-warning transition hover:bg-warning-soft/70"
+                >
+                  Revisar {pendingReview} remito{pendingReview === 1 ? "" : "s"}
+                </Link>
+              )}
+            </div>
           </div>
+
+          {stats && <StatsRow stats={stats} />}
 
           <section className="rounded-lg border border-border bg-surface shadow-sm">
             <h2 className="border-b border-border px-4 py-3 text-sm font-semibold text-ink">
               Últimos remitos
             </h2>
             {remitos.length === 0 ? (
-              <p className="px-4 py-8 text-center text-sm text-ink-muted">
-                Todavía no hay remitos cargados.
-              </p>
+              <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
+                <FileText className="h-8 w-8 text-ink-muted/60" aria-hidden="true" />
+                <p className="text-sm text-ink-muted">Todavía no hay remitos cargados.</p>
+                <Link
+                  to="/escanear"
+                  className="text-sm font-medium text-primary transition hover:text-primary-hover"
+                >
+                  Escanear el primer remito
+                </Link>
+              </div>
             ) : (
               <ul className="divide-y divide-border">
                 {remitos.map((remito) => (
                   <li key={remito.id}>
                     <Link
                       to={`/remitos/${remito.id}`}
-                      className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 transition hover:bg-surface-raised"
+                      className="flex items-center justify-between gap-3 px-4 py-3 transition hover:bg-surface-raised"
                     >
-                      <span className="font-medium text-ink">
-                        {remito.numero_remito ?? "Sin número"}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium text-ink">
+                          {remito.numero_remito ?? "Sin número"}
+                        </span>
+                        <span className="block truncate text-sm text-ink-muted">{remito.cliente ?? "—"}</span>
                       </span>
-                      <span className="text-sm text-ink-muted">{remito.cliente ?? "—"}</span>
-                      <span className="text-sm text-ink-muted">
-                        {formatFechaHora(remito.fecha_hora)}
+                      <span className="flex shrink-0 flex-col items-end gap-1">
+                        <StatusBadge status={remito.status} />
+                        <span className="text-sm text-ink-muted">{formatFechaHora(remito.fecha_hora)}</span>
                       </span>
-                      <StatusBadge status={remito.status} />
                     </Link>
                   </li>
                 ))}

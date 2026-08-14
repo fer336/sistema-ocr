@@ -231,14 +231,14 @@ export function RemitosList() {
           />
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-2 gap-2 md:flex md:flex-wrap">
           {STATUS_FILTERS.map((filter) => (
             <button
               key={filter.value}
               type="button"
               onClick={() => changeFilter(filter.value)}
               className={cn(
-                "w-32 rounded-lg px-3 py-1.5 text-center text-sm font-medium transition focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
+                "rounded-lg px-3 py-1.5 text-center text-sm font-medium transition focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none md:w-32 last:odd:col-span-2",
                 statusFilter === filter.value
                   ? "bg-primary text-white"
                   : "border border-border bg-surface text-ink hover:bg-surface-raised"
