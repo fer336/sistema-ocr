@@ -132,9 +132,11 @@ export function listRemitos(params: RemitosQuery = {}): Promise<DeliveryNote[]> 
 }
 
 /**
- * `POST /api/v1/remitos/share-links` — devuelve un link prefirmado por remito
- * para armar el mensaje de WhatsApp. Los links vencen a los 7 días (máximo real
- * de una firma SigV4 de S3/MinIO), y eso se aclara en el texto compartido.
+ * `POST /api/v1/remitos/share-links` — devuelve un link corto y permanente por
+ * remito (`{PUBLIC_BASE_URL}/s/{code}`) para armar el mensaje de WhatsApp. El
+ * link nunca vence; en cada click redirige a una URL prefirmada de MinIO
+ * fresca, así que el destinatario no ve la URL larga ni puede reusar una firma
+ * vieja.
  */
 export function createShareLinks(remitoIds: string[]): Promise<RemitoShareLink[]> {
   return apiRequest<RemitoShareLink[]>("/remitos/share-links", {

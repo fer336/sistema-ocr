@@ -7,17 +7,18 @@ sólo una URL prefirmada.
 import asyncio
 import logging
 import re
+import secrets
 import uuid
-from datetime import timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_session
 from app.core.config import settings
-from app.db.models import DeliveryNote, SourceFile, User
+from app.db.models import DeliveryNote, ShareLink, SourceFile, User
 from app.schemas.remitos import FileUrlOut, ShareLinkOut, ShareLinksIn
 from app.services import minio_service
 
@@ -26,17 +27,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 Variant = Literal["optimized", "original", "preview"]
-
-#: Vencimiento de los links que se mandan por WhatsApp.
-#:
-#: 7 días es el MÁXIMO ABSOLUTO de una URL prefirmada SigV4: la propia firma
-#: acota `X-Amz-Expires` a 604800 segundos y tanto S3 como MinIO rechazan la
-#: request si se pide más. No existe un link prefirmado "que no caduque":
-#: cualquier valor mayor no falla al firmar, falla recién cuando el
-#: destinatario abre el link. Por eso está acá y no en `Settings`: no es un
-#: parámetro ajustable, es un límite del protocolo. El `file-url` normal sigue
-#: usando `MINIO_PRESIGNED_EXPIRES_SECONDS`, que sí es política nuestra.
-SHARE_LINK_EXPIRES = timedelta(days=7)
 
 
 def _pick_key(source_file: SourceFile, variant: Variant) -> str | None:
@@ -75,7 +65,13 @@ async def create_share_links(
     db: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> list[ShareLinkOut]:
-    """Links directos de 7 días para compartir varios remitos (WhatsApp).
+    """Links cortos y permanentes para compartir varios remitos (WhatsApp).
+
+    Por cada remito se persiste un `ShareLink` con código corto; la URL que
+    sale en el mensaje es `{public_base_url}/s/{code}`, que en cada click
+    redirige a una URL prefirmada de MinIO fresca. El link compartido nunca
+    vence y el destinatario nunca ve la URL prefirmada larga ni la key del
+    bucket.
 
     Es tolerante a fallas parciales a propósito: un ID que ya no existe o un
     remito cuyo archivo no quedó en MinIO se omite del resultado en vez de
@@ -109,16 +105,27 @@ async def create_share_links(
             continue
         pending.append((remito, key))
 
-    def _sign_all() -> list[str]:
-        return [
-            minio_service.presigned_get_url(key, int(SHARE_LINK_EXPIRES.total_seconds()))
-            for _, key in pending
-        ]
+    def _new_code() -> str:
+        # `token_hex(8)` = 16 caracteres, suficiente entropía para que una
+        # colisión sea estadísticamente irrelevante a esta escala -- igual se
+        # reintenta una vez si `code` ya existe, no se confía a ciegas.
+        return secrets.token_hex(8)
 
+    codes = [_new_code() for _ in pending]
+    for code, (_, key) in zip(codes, pending, strict=True):
+        db.add(ShareLink(code=code, minio_key=key, created_by=current_user.id))
     try:
-        urls = await asyncio.to_thread(_sign_all)
-    except minio_service.StorageError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        await db.commit()
+    except IntegrityError:
+        # Colisión de `code` (raro): en PostgreSQL el error aborta la
+        # transacción entera, así que se regeneran TODOS los códigos y se
+        # reintenta una vez. Si vuelve a chocar, se propaga.
+        logger.warning("share-links: colisión de code, se reintenta con códigos nuevos")
+        await db.rollback()
+        codes = [_new_code() for _ in pending]
+        for code, (_, key) in zip(codes, pending, strict=True):
+            db.add(ShareLink(code=code, minio_key=key, created_by=current_user.id))
+        await db.commit()
 
     return [
         ShareLinkOut(
@@ -126,9 +133,9 @@ async def create_share_links(
             cliente=remito.cliente,
             numero_remito=remito.numero_remito,
             fecha_hora=remito.fecha_hora,
-            url=url,
+            url=f"{settings.public_base_url}/s/{code}",
         )
-        for (remito, _), url in zip(pending, urls, strict=True)
+        for (remito, _), code in zip(pending, codes, strict=True)
     ]
 
 

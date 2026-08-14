@@ -3,13 +3,6 @@ import { createShareLinks } from "../lib/api";
 import { formatFechaHora } from "../lib/datetime";
 import type { RemitoShareLink } from "../types";
 
-/**
- * Vencimiento de los links prefirmados que devuelve el backend. Es el máximo
- * técnico de una firma SigV4 de S3/MinIO — no existe un link prefirmado que no
- * caduque nunca, así que se avisa en el propio mensaje que se comparte.
- */
-const SHARE_LINK_EXPIRY_DAYS = 7;
-
 interface ShareModalProps {
   remitoIds: string[];
   onClose: () => void;
@@ -32,9 +25,7 @@ function buildMessage(links: RemitoShareLink[]): string {
     return `${numero}\n${cliente} · ${formatFechaHora(link.fecha_hora)}\n${link.url}`;
   });
 
-  const footer = `(Los links son válidos por ${SHARE_LINK_EXPIRY_DAYS} días)`;
-
-  return [header, ...items, footer].join("\n\n");
+  return [header, ...items].join("\n\n");
 }
 
 function buildWhatsappUrl(phoneDigits: string, message: string): string {
@@ -48,7 +39,8 @@ function buildWhatsappUrl(phoneDigits: string, message: string): string {
  * armado.
  *
  * No se puede adjuntar archivos a un chat desde la web — ninguna API lo
- * permite — así que lo que se comparte es texto con links prefirmados.
+ * permite — así que lo que se comparte es texto con links cortos que
+ * redirigen a una URL prefirmada fresca por click (nunca vencen).
  */
 export function ShareModal({ remitoIds, onClose, onShared }: ShareModalProps) {
   const [phone, setPhone] = useState("");
@@ -121,7 +113,7 @@ export function ShareModal({ remitoIds, onClose, onShared }: ShareModalProps) {
           <p className="text-sm text-ink-muted">
             Se va a abrir WhatsApp con un mensaje que incluye{" "}
             {remitoIds.length === 1 ? "1 remito" : `${remitoIds.length} remitos`} y su link de
-            descarga. Los links vencen a los {SHARE_LINK_EXPIRY_DAYS} días.
+            descarga. El link no vence.
           </p>
 
           <label className="flex flex-col gap-1">

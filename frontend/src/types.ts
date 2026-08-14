@@ -127,8 +127,9 @@ export interface RemitosQuery {
 /**
  * Item de `POST /api/v1/remitos/share-links`.
  *
- * `url` es un link prefirmado de MinIO con el máximo técnico de la firma SigV4:
- * 7 días (ver `SHARE_LINK_EXPIRY_DAYS`). No existe un prefirmado eterno.
+ * `url` es un link corto y permanente (`{PUBLIC_BASE_URL}/s/{code}`): nunca
+ * vence, y cada click redirige a una URL prefirmada de MinIO fresca, generada
+ * al momento (la firma dura segundos, no el link).
  */
 export interface RemitoShareLink {
   id: string;
