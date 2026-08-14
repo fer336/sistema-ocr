@@ -25,7 +25,7 @@ services:
     # vX.Y.Z en cada release (INFRASTRUCTURE.md §6.8) -- no es una variable
     # de entorno: Portainer despliega exactamente lo que está commiteado
     # acá. v0.0.0 = placeholder hasta la primera release real.
-    image: ghcr.io/fer336/remitos-backend:v0.1.0
+    image: ghcr.io/fer336/remitos-backend:v0.1.1
     networks:
       - network_public
     secrets:
@@ -34,7 +34,7 @@ services:
       # INF-502: GET /version. No vive en remitos_env -- es metadata de
       # deployment (qué release corre), no config de la app. release.yml
       # la pinea junto a las imágenes en cada release (ver pin script).
-      APP_VERSION: v0.1.0
+      APP_VERSION: v0.1.1
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
       interval: 10s
@@ -83,7 +83,7 @@ services:
 
   frontend:
     # Ídem backend: tag literal, reescrito por release.yml en cada release.
-    image: ghcr.io/fer336/remitos-frontend:v0.1.0
+    image: ghcr.io/fer336/remitos-frontend:v0.1.1
     networks:
       - network_public
     depends_on:
