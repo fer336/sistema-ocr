@@ -34,21 +34,15 @@ const CHECKBOX_CLASS =
  * justo entre ambos y `Archivo` al final. Las `<td>` del cuerpo siguen
  * exactamente el mismo orden.
  */
-const COLUMNS_BEFORE_COMENTARIOS: { key: SortKey; label: string; width: string }[] = [
-  { key: "numero_cliente", label: "N.º cliente", width: "w-[9%]" },
-  { key: "cliente", label: "Nombre cliente", width: "w-[20%]" },
-  { key: "numero_remito", label: "N.º remito", width: "w-[18%]" },
+const COLUMNS_BEFORE_COMENTARIOS: { key: SortKey; label: string }[] = [
+  { key: "numero_cliente", label: "N.º cliente" },
+  { key: "cliente", label: "Nombre cliente" },
+  { key: "numero_remito", label: "N.º remito" },
 ];
-const COLUMNS_AFTER_COMENTARIOS: { key: SortKey; label: string; width: string }[] = [
-  { key: "fecha_hora", label: "Fecha y hora", width: "w-[17%]" },
-  { key: "status", label: "Estado", width: "w-[13%]" },
+const COLUMNS_AFTER_COMENTARIOS: { key: SortKey; label: string }[] = [
+  { key: "fecha_hora", label: "Fecha y hora" },
+  { key: "status", label: "Estado" },
 ];
-/** Ancho de "Comentarios", el único no-ordenable entre los dos grupos de
- * arriba. Estos porcentajes + los 40px fijos del checkbox y los 64px de
- * Archivo/Borrar reparten el ancho real -- "N.º remito"/"Fecha y hora" llevan
- * más aire a propósito porque su contenido típico ("B 5001 00140093",
- * "21/07/2026 11:08") es el que más se cortaba antes de este ajuste. */
-const COMENTARIOS_WIDTH = "w-[13%]";
 
 function compare(a: DeliveryNote, b: DeliveryNote, key: SortKey): number {
   const left = a[key];
@@ -96,12 +90,9 @@ export function RemitosTable({
     setSortDirection("asc");
   }
 
-  function sortableHeader(column: { key: SortKey; label: string; width: string }) {
+  function sortableHeader(column: { key: SortKey; label: string }) {
     return (
-      <th
-        key={column.key}
-        className={cn(column.width, "px-4 py-2 text-left font-medium text-ink-muted")}
-      >
+      <th key={column.key} className="px-4 py-2 text-left font-medium text-ink-muted">
         <button
           type="button"
           onClick={() => toggleSort(column.key)}
@@ -123,7 +114,7 @@ export function RemitosTable({
     <>
       {/* Desktop */}
       <div className="hidden overflow-x-auto rounded-lg border border-border bg-surface shadow-sm md:block">
-        <table className="w-full table-fixed text-sm">
+        <table className="min-w-full text-sm">
           <thead className="bg-surface-raised">
             <tr>
               <th className="w-10 px-4 py-2">
@@ -141,11 +132,7 @@ export function RemitosTable({
                 />
               </th>
               {COLUMNS_BEFORE_COMENTARIOS.map(sortableHeader)}
-              <th
-                className={cn(COMENTARIOS_WIDTH, "px-4 py-2 text-left font-medium text-ink-muted")}
-              >
-                Comentarios
-              </th>
+              <th className="px-4 py-2 text-left font-medium text-ink-muted">Comentarios</th>
               {COLUMNS_AFTER_COMENTARIOS.map(sortableHeader)}
               <th className="w-16 px-4 py-2 text-center font-medium text-ink-muted">Archivo</th>
               <th className="w-16 px-4 py-2 text-center font-medium text-ink-muted">
@@ -172,18 +159,25 @@ export function RemitosTable({
                     aria-label={`Seleccionar remito ${remito.numero_remito ?? "sin número"}`}
                   />
                 </td>
-                <td className="truncate px-4 py-2 text-ink">{remito.numero_cliente ?? "—"}</td>
-                <td className="truncate px-4 py-2 text-ink" title={remito.cliente ?? ""}>
+                <td className="px-4 py-2 whitespace-nowrap text-ink">
+                  {remito.numero_cliente ?? "—"}
+                </td>
+                <td
+                  className="max-w-56 truncate px-4 py-2 text-ink"
+                  title={remito.cliente ?? ""}
+                >
                   {remito.cliente ?? "—"}
                 </td>
-                <td className="truncate px-4 py-2 font-medium text-ink">
+                <td className="px-4 py-2 whitespace-nowrap font-medium text-ink">
                   {remito.numero_remito ?? "—"}
                 </td>
-                <td className="truncate px-4 py-2 text-ink" title={remito.comentarios ?? ""}>
+                <td className="max-w-56 truncate px-4 py-2 text-ink" title={remito.comentarios ?? ""}>
                   {remito.comentarios ?? "—"}
                 </td>
-                <td className="truncate px-4 py-2 text-ink">{formatFechaHora(remito.fecha_hora)}</td>
-                <td className="px-4 py-2">
+                <td className="px-4 py-2 whitespace-nowrap text-ink">
+                  {formatFechaHora(remito.fecha_hora)}
+                </td>
+                <td className="px-4 py-2 whitespace-nowrap">
                   <StatusBadge status={remito.status} />
                 </td>
                 <td className="px-4 py-2 text-center">
