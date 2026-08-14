@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="260" viewBox="0 0 1200 260" role="img" aria-label="Sanitini — OCR de remitos">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1f1f28"/>
+      <stop offset="1" stop-color="#2a2a37"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1d6ff2"/>
+      <stop offset="1" stop-color="#7aa2f7"/>
+    </linearGradient>
+  </defs>
+
+  <!-- fondo -->
+  <rect x="0" y="0" width="1200" height="260" rx="20" fill="url(#bg)" stroke="#363646" stroke-width="2"/>
+
+  <!-- decoración -->
+  <circle cx="1060" cy="60" r="140" fill="#1d6ff2" opacity="0.12"/>
+  <circle cx="1120" cy="200" r="90" fill="#98bb6c" opacity="0.10"/>
+  <circle cx="985" cy="205" r="6" fill="#98bb6c" opacity="0.5"/>
+  <circle cx="1015" cy="190" r="3" fill="#98bb6c" opacity="0.4"/>
+  <circle cx="1045" cy="210" r="4" fill="#98bb6c" opacity="0.45"/>
+
+  <!-- icono documento -->
+  <g transform="translate(64, 72)">
+    <rect x="0" y="0" width="58" height="72" rx="8" fill="#2a2a37" stroke="#54546d" stroke-width="2"/>
+    <path d="M 14 0 L 44 0 L 58 14 L 58 72" fill="none" stroke="#54546d" stroke-width="2"/>
+    <line x1="16" y1="30" x2="42" y2="30" stroke="#54546d" stroke-width="4" stroke-linecap="round"/>
+    <line x1="16" y1="42" x2="42" y2="42" stroke="#54546d" stroke-width="4" stroke-linecap="round"/>
+    <line x1="16" y1="54" x2="32" y2="54" stroke="#54546d" stroke-width="4" stroke-linecap="round"/>
+    <path d="M 34 60 L 44 50 L 52 58 L 46 64 Z" fill="none" stroke="#98bb6c" stroke-width="3" stroke-linejoin="round"/>
+  </g>
+
+  <!-- título -->
+  <text x="150" y="118" font-family="system-ui, -apple-system, sans-serif" font-size="56" font-weight="700" fill="#dcd7ba">Sanitini</text>
+  <text x="152" y="152" font-family="system-ui, -apple-system, sans-serif" font-size="22" fill="#7e9cd8">OCR de remitos de transporte — escaneá, revisá, compartí</text>
+
+  <!-- chips de stack -->
+  <g font-family="system-ui, -apple-system, sans-serif" font-size="16">
+    <rect x="150" y="176" width="118" height="34" rx="17" fill="#2a2a37" stroke="#363646" stroke-width="1.5"/>
+    <text x="209" y="198" text-anchor="middle" fill="#c8c093">FastAPI</text>
+
+    <rect x="278" y="176" width="118" height="34" rx="17" fill="#2a2a37" stroke="#363646" stroke-width="1.5"/>
+    <text x="337" y="198" text-anchor="middle" fill="#c8c093">React 19</text>
+
+    <rect x="406" y="176" width="128" height="34" rx="17" fill="#2a2a37" stroke="#363646" stroke-width="1.5"/>
+    <text x="470" y="198" text-anchor="middle" fill="#c8c093">PostgreSQL</text>
+
+    <rect x="544" y="176" width="104" height="34" rx="17" fill="#2a2a37" stroke="#363646" stroke-width="1.5"/>
+    <text x="596" y="198" text-anchor="middle" fill="#c8c093">MinIO</text>
+
+    <rect x="658" y="176" width="146" height="34" rx="17" fill="#2a2a37" stroke="#363646" stroke-width="1.5"/>
+    <text x="731" y="198" text-anchor="middle" fill="#c8c093">Docker Swarm</text>
+
+    <rect x="814" y="176" width="104" height="34" rx="17" fill="#2a2a37" stroke="#363646" stroke-width="1.5"/>
+    <text x="866" y="198" text-anchor="middle" fill="#c8c093">Traefik</text>
+  </g>
+</svg>
