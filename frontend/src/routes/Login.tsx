@@ -3,6 +3,7 @@ import { GoogleLogin, type CredentialResponse } from "@react-oauth/google";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { loginWithGoogle } from "../lib/auth";
 import { useAuth } from "../lib/auth-context";
+import { useTheme } from "../lib/theme";
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
 
@@ -12,6 +13,10 @@ export function Login() {
   const location = useLocation();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Solo para que el ícono de la pestaña del navegador quede sincronizado
+  // con el tema ya en el login (antes de llegar a `AppLayout`, que es donde
+  // vive el switch manual) -- no se usa el toggle acá.
+  useTheme();
 
   const redirectTo = (location.state as { from?: string } | null)?.from ?? "/";
 
@@ -44,7 +49,8 @@ export function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-canvas px-4">
       <div className="w-full max-w-sm rounded-lg border border-border bg-surface p-8 text-center shadow-sm">
-        <h1 className="text-xl font-semibold text-ink">Casa Santini</h1>
+        <img src="/favicon2.svg" alt="" className="mx-auto h-16 w-16" />
+        <h1 className="mt-3 text-xl font-semibold text-ink">Casa Santini</h1>
         <p className="mt-1 text-sm text-ink-muted">
           Ingresá con tu cuenta de Google para continuar.
         </p>

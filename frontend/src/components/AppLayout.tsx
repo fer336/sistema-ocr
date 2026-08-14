@@ -12,7 +12,7 @@ import {
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { cn } from "../lib/cn";
 import { useAuth } from "../lib/auth-context";
-import { useTheme } from "../lib/theme";
+import { faviconForTheme, useTheme } from "../lib/theme";
 
 const NAV_ITEMS: { to: string; label: string; end: boolean; icon: LucideIcon }[] = [
   { to: "/", label: "Dashboard", end: true, icon: LayoutDashboard },
@@ -39,7 +39,7 @@ export function AppLayout() {
       <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 flex-col border-r border-border bg-surface sm:flex">
         <div className="px-5 py-5">
           <div className="flex items-center gap-2">
-            <img src="/favicon.svg" alt="" className="h-6 w-6 shrink-0" />
+            <img src={faviconForTheme(theme)} alt="" className="h-6 w-6 shrink-0" />
             <h1 className="text-lg font-semibold text-ink">OCR</h1>
           </div>
           <p className="text-xs text-ink-muted">Digitalización, OCR y revisión</p>
@@ -108,7 +108,7 @@ export function AppLayout() {
         <div className="flex items-center justify-between gap-3 px-4 py-3">
           <div>
             <div className="flex items-center gap-2">
-              <img src="/favicon.svg" alt="" className="h-6 w-6 shrink-0" />
+              <img src={faviconForTheme(theme)} alt="" className="h-6 w-6 shrink-0" />
               <h1 className="text-lg font-semibold text-ink">OCR</h1>
             </div>
             <p className="text-xs text-ink-muted">Digitalización, OCR y revisión</p>

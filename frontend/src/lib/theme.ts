@@ -16,6 +16,27 @@ function currentTheme(): Theme {
 }
 
 /**
+ * Un logo por tema: `favicon.svg` para oscuro, `favicon2.svg` para claro.
+ * Mismo criterio en el ícono de pestaña del navegador y en el logo del
+ * sidebar/header (`AppLayout`) -- ver `FAVICON_BY_THEME`.
+ */
+const FAVICON_BY_THEME: Record<Theme, string> = {
+  dark: "/favicon.svg",
+  light: "/favicon2.svg",
+};
+
+/** Expuesto para que otros componentes (el logo del sidebar) usen el mismo
+ * mapeo sin duplicarlo. */
+export function faviconForTheme(theme: Theme): string {
+  return FAVICON_BY_THEME[theme];
+}
+
+function syncFaviconLink(theme: Theme): void {
+  const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  if (link) link.href = FAVICON_BY_THEME[theme];
+}
+
+/**
  * Tema con override manual. Sin elección guardada sigue al sistema operativo
  * (el CSS ya lo resuelve solo); al tocar el switch se fija un valor
  * explícito que persiste en `localStorage` y gana sobre el sistema, hasta
@@ -26,6 +47,7 @@ export function useTheme(): [Theme, () => void] {
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
+    syncFaviconLink(theme);
     try {
       localStorage.setItem(STORAGE_KEY, theme);
     } catch {
