@@ -231,14 +231,18 @@ export function RemitosList() {
           />
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        {/* Mobile: una sola fila que se desliza (nada de wrap -- con 5 pills
+            de ancho fijo, envolver dejaba "Duplicados" solo en la última
+            fila, descolgado). Desde `sm:` hay lugar de sobra para las 5
+            juntas, ahí sí envuelve. */}
+        <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0">
           {STATUS_FILTERS.map((filter) => (
             <button
               key={filter.value}
               type="button"
               onClick={() => changeFilter(filter.value)}
               className={cn(
-                "w-32 rounded-lg px-3 py-1.5 text-center text-sm font-medium transition focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
+                "w-32 shrink-0 rounded-lg px-3 py-1.5 text-center text-sm font-medium transition focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
                 statusFilter === filter.value
                   ? "bg-primary text-white"
                   : "border border-border bg-surface text-ink hover:bg-surface-raised"
