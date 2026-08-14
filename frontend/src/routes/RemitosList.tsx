@@ -28,7 +28,6 @@ export function RemitosList() {
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [clienteFilter, setClienteFilter] = useState("");
   // `<input type="date">` → siempre `YYYY-MM-DD`; se traduce a `DD/MM/YYYY` al pedir.
   const [fechaDesde, setFechaDesde] = useState("");
   const [fechaHasta, setFechaHasta] = useState("");
@@ -49,7 +48,6 @@ export function RemitosList() {
       listRemitos({
         q: searchQuery.trim() || undefined,
         status: statusFilter || undefined,
-        cliente: clienteFilter.trim() || undefined,
         fecha_desde: dateInputToDdMmYyyy(fechaDesde),
         fecha_hasta: dateInputToDdMmYyyy(fechaHasta),
         limit: PAGE_SIZE,
@@ -70,7 +68,7 @@ export function RemitosList() {
       active = false;
       clearTimeout(timeoutId);
     };
-  }, [searchQuery, statusFilter, clienteFilter, fechaDesde, fechaHasta, page]);
+  }, [searchQuery, statusFilter, fechaDesde, fechaHasta, page]);
 
   function changeFilter(value: string) {
     setStatusFilter(value);
@@ -79,11 +77,6 @@ export function RemitosList() {
 
   function changeSearch(value: string) {
     setSearchQuery(value);
-    setPage(0);
-  }
-
-  function changeCliente(value: string) {
-    setClienteFilter(value);
     setPage(0);
   }
 
@@ -98,7 +91,6 @@ export function RemitosList() {
   }
 
   function clearFilters() {
-    setClienteFilter("");
     setFechaDesde("");
     setFechaHasta("");
     setPage(0);
@@ -228,36 +220,34 @@ export function RemitosList() {
   return (
     <div className="space-y-6">
       <div className="space-y-3">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
           <SearchBar value={searchQuery} onChange={changeSearch} />
-          <div className="flex flex-wrap gap-2">
-            {STATUS_FILTERS.map((filter) => (
-              <button
-                key={filter.value}
-                type="button"
-                onClick={() => changeFilter(filter.value)}
-                className={cn(
-                  "rounded-lg px-3 py-1.5 text-sm font-medium transition focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
-                  statusFilter === filter.value
-                    ? "bg-primary text-white"
-                    : "border border-border bg-surface text-ink hover:bg-surface-raised"
-                )}
-              >
-                {filter.label}
-              </button>
-            ))}
-          </div>
+          <FilterBar
+            fechaDesde={fechaDesde}
+            fechaHasta={fechaHasta}
+            onFechaDesdeChange={changeFechaDesde}
+            onFechaHastaChange={changeFechaHasta}
+            onClear={clearFilters}
+          />
         </div>
 
-        <FilterBar
-          cliente={clienteFilter}
-          fechaDesde={fechaDesde}
-          fechaHasta={fechaHasta}
-          onClienteChange={changeCliente}
-          onFechaDesdeChange={changeFechaDesde}
-          onFechaHastaChange={changeFechaHasta}
-          onClear={clearFilters}
-        />
+        <div className="flex flex-wrap gap-2">
+          {STATUS_FILTERS.map((filter) => (
+            <button
+              key={filter.value}
+              type="button"
+              onClick={() => changeFilter(filter.value)}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-sm font-medium transition focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
+                statusFilter === filter.value
+                  ? "bg-primary text-white"
+                  : "border border-border bg-surface text-ink hover:bg-surface-raised"
+              )}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {selectedCount > 0 && (

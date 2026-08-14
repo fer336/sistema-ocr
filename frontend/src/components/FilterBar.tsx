@@ -1,15 +1,14 @@
 interface FilterBarProps {
-  cliente: string;
   fechaDesde: string;
   fechaHasta: string;
-  onClienteChange: (value: string) => void;
   onFechaDesdeChange: (value: string) => void;
   onFechaHastaChange: (value: string) => void;
   onClear: () => void;
 }
 
 /**
- * Filtros dedicados que acompañan al `SearchBar`: cliente + rango de fechas.
+ * Filtro de rango de fechas que acompaña al `SearchBar` (que ya busca por
+ * cliente entre otros campos -- no hace falta un input de cliente aparte acá).
  *
  * Las fechas son dos `<input type="date">` nativos a propósito — el valor que
  * entregan (`YYYY-MM-DD`) es estable en todos los navegadores y no justifica
@@ -20,30 +19,17 @@ const FIELD_CLASS =
   "w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-ink placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary";
 
 export function FilterBar({
-  cliente,
   fechaDesde,
   fechaHasta,
-  onClienteChange,
   onFechaDesdeChange,
   onFechaHastaChange,
   onClear,
 }: FilterBarProps) {
-  const hasFilters = cliente !== "" || fechaDesde !== "" || fechaHasta !== "";
+  const hasFilters = fechaDesde !== "" || fechaHasta !== "";
 
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-      <label className="flex w-full flex-col gap-1 sm:w-56">
-        <span className="text-xs font-medium text-ink-muted">Cliente</span>
-        <input
-          type="text"
-          value={cliente}
-          onChange={(event) => onClienteChange(event.target.value)}
-          placeholder="Nombre del cliente"
-          className={FIELD_CLASS}
-        />
-      </label>
-
-      <label className="flex w-full flex-col gap-1 sm:w-44">
+    <div className="flex flex-wrap items-end gap-3">
+      <label className="flex w-[calc(50%-0.375rem)] flex-col gap-1 sm:w-40">
         <span className="text-xs font-medium text-ink-muted">Desde</span>
         <input
           type="date"
@@ -54,7 +40,7 @@ export function FilterBar({
         />
       </label>
 
-      <label className="flex w-full flex-col gap-1 sm:w-44">
+      <label className="flex w-[calc(50%-0.375rem)] flex-col gap-1 sm:w-40">
         <span className="text-xs font-medium text-ink-muted">Hasta</span>
         <input
           type="date"
@@ -69,7 +55,7 @@ export function FilterBar({
         <button
           type="button"
           onClick={onClear}
-          className="self-start text-sm font-medium text-ink-muted transition hover:text-ink hover:underline sm:self-auto sm:py-2.5"
+          className="text-sm font-medium text-ink-muted transition hover:text-ink hover:underline sm:py-2.5"
         >
           Limpiar filtros
         </button>
