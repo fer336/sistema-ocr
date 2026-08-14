@@ -225,54 +225,57 @@ export function RemitosTable({
         <ul className="space-y-3">
           {sorted.map((remito) => (
             <li key={remito.id}>
-              {/* El checkbox va FUERA del botón de fila: un `<input>` dentro de
-                  un `<button>` no es HTML válido y el click no llegaría. */}
-              <div className="flex items-start gap-3 rounded-lg border border-border bg-surface p-4 shadow-sm">
-                <input
-                  type="checkbox"
-                  className={cn(CHECKBOX_CLASS, "mt-1")}
-                  checked={selectedIds.has(remito.id)}
-                  onChange={() => onToggleSelect(remito.id)}
-                  aria-label={`Seleccionar remito ${remito.numero_remito ?? "sin número"}`}
-                />
-                <button
-                  type="button"
-                  onClick={() => onSelect(remito)}
-                  className="min-w-0 flex-1 text-left transition active:opacity-70"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="font-semibold text-ink">
-                      {remito.numero_remito ?? "Sin número"}
-                    </span>
-                    <StatusBadge status={remito.status} />
-                  </div>
-                  <p className="mt-1 text-sm text-ink">{remito.cliente ?? "—"}</p>
-                  <p className="text-sm text-ink-muted">
-                    N.º cliente {remito.numero_cliente ?? "—"} · {formatFechaHora(remito.fecha_hora)}
-                  </p>
-                  {remito.comentarios && (
-                    <p className="mt-1 line-clamp-2 text-sm text-ink-muted">{remito.comentarios}</p>
-                  )}
-                </button>
-              </div>
-              <div className="mt-1 flex items-center gap-4 px-4">
-                <button
-                  type="button"
-                  onClick={() => onPreview(remito)}
-                  aria-label={`Ver remito ${remito.numero_remito ?? "sin número"}`}
-                  className="flex items-center gap-1.5 text-sm font-medium text-primary"
-                >
-                  <Eye className="h-4 w-4" />
-                  Ver documento
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onDelete(remito)}
-                  aria-label={`Borrar remito ${remito.numero_remito ?? "sin número"}`}
-                  className="text-error"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+              <div className="rounded-lg border border-border bg-surface p-4 shadow-sm">
+                {/* El checkbox va FUERA del botón de fila: un `<input>` dentro
+                    de un `<button>` no es HTML válido y el click no llegaría. */}
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    className={cn(CHECKBOX_CLASS, "mt-1")}
+                    checked={selectedIds.has(remito.id)}
+                    onChange={() => onToggleSelect(remito.id)}
+                    aria-label={`Seleccionar remito ${remito.numero_remito ?? "sin número"}`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => onSelect(remito)}
+                    className="min-w-0 flex-1 text-left transition active:opacity-70"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="font-semibold text-ink">
+                        {remito.numero_remito ?? "Sin número"}
+                      </span>
+                      <StatusBadge status={remito.status} />
+                    </div>
+                    <p className="mt-1 text-sm text-ink">{remito.cliente ?? "—"}</p>
+                    <p className="text-sm text-ink-muted">
+                      N.º cliente {remito.numero_cliente ?? "—"} · {formatFechaHora(remito.fecha_hora)}
+                    </p>
+                    {remito.comentarios && (
+                      <p className="mt-1 line-clamp-2 text-sm text-ink-muted">{remito.comentarios}</p>
+                    )}
+                  </button>
+                </div>
+
+                <div className="mt-3 flex items-center gap-4 border-t border-border pt-3">
+                  <button
+                    type="button"
+                    onClick={() => onPreview(remito)}
+                    aria-label={`Ver remito ${remito.numero_remito ?? "sin número"}`}
+                    className="flex items-center gap-1.5 text-sm font-medium text-primary"
+                  >
+                    <Eye className="h-4 w-4" />
+                    Ver documento
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onDelete(remito)}
+                    aria-label={`Borrar remito ${remito.numero_remito ?? "sin número"}`}
+                    className="text-error"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             </li>
           ))}

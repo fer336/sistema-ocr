@@ -238,7 +238,7 @@ export function RemitosList() {
               type="button"
               onClick={() => changeFilter(filter.value)}
               className={cn(
-                "rounded-lg px-3 py-1.5 text-sm font-medium transition focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
+                "w-32 rounded-lg px-3 py-1.5 text-center text-sm font-medium transition focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
                 statusFilter === filter.value
                   ? "bg-primary text-white"
                   : "border border-border bg-surface text-ink hover:bg-surface-raised"
